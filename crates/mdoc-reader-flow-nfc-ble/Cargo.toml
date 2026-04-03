@@ -13,3 +13,4 @@ mdoc-reader-flow = { path = "../mdoc-reader-flow" }
 nfc-reader = { path = "../nfc-reader" }
 tnep = { path = "../tnep" }
 minicbor = { version = "2.2", features = ["std"] }
+log = "0.4"

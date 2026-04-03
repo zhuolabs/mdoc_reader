@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use connection_handover::{
-    BleAdStructure, BleLeRole, BleOobRecord,
-    HandoverRequest, HandoverSelect,
+    BleAdStructure, BleLeRole, BleOobRecord, HandoverRequest, HandoverSelect,
     CONNECTION_HANDOVER_SERVICE_NAME,
 };
+use log::warn;
 use mdoc_core::{
     ble_ident, CoseKeyPrivate, DeviceEngagement, DeviceRequest, DeviceResponse, MdocRole,
     NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
@@ -73,7 +73,8 @@ where
         .await
         .context("TNEP handover exchange failed")?;
 
-    let handover_select: HandoverSelect = (&handover_select_message).try_into()
+    let handover_select: HandoverSelect = (&handover_select_message)
+        .try_into()
         .map_err(|_| anyhow::anyhow!("Handover Select message parse failed"))?;
 
     let (_, device_engagement) = handover_select
@@ -208,8 +209,8 @@ fn try_decode_and_decrypt_session_data(
     for (swap_at, swapped) in one_swap_reordered_packets(packets) {
         let candidate = join_packets(&swapped);
         if let Ok(message) = decode_and_decrypt_session_data(&candidate, session_encryption) {
-            eprintln!(
-                "[BLE] session data recovered by swapping packet {} and {}",
+            warn!(
+                "session data recovered by swapping packet {} and {}",
                 swap_at,
                 swap_at + 1
             );
@@ -221,8 +222,8 @@ fn try_decode_and_decrypt_session_data(
         for (permutation, reordered) in two_inversion_reordered_packets(packets) {
             let candidate = join_packets(&reordered);
             if let Ok(message) = decode_and_decrypt_session_data(&candidate, session_encryption) {
-                eprintln!(
-                    "[BLE] session data recovered by inversion-2 permutation {:?}",
+                warn!(
+                    "session data recovered by inversion-2 permutation {:?}",
                     permutation
                 );
                 return Ok(message);

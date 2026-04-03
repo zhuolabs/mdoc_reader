@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context};
 use clap::Parser;
+use log::info;
 use mdoc_core::{DeviceRequest, NameSpaces};
 use mdoc_reader_flow_nfc_ble::read_mdoc;
 use mdoc_reader_transport_ble_winrt::WinRtBleReaderTransportFactory;
@@ -27,6 +28,8 @@ struct Cli {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let cli = Cli::parse();
     let config_json = load_config_json(&cli)?;
 
@@ -34,10 +37,10 @@ async fn main() -> anyhow::Result<()> {
     let observer = ConsoleReaderFlowObserver;
 
     let device_request = build_device_request_from_json(&config_json)?;
-    println!("[INFO] DeviceRequest={:?}", device_request);
+    info!("DeviceRequest={:?}", device_request);
 
     let transport_factory = WinRtBleReaderTransportFactory;
-    println!("[OK] BLE transport factory selected");
+    info!("BLE transport factory selected");
     let response = read_mdoc(
         &mut nfc,
         &transport_factory,

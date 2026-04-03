@@ -4,6 +4,7 @@ use crate::{
     ServiceParameterRecord, TnepService, NDEF_TAG_APP_AID,
 };
 
+use log::debug;
 use ndef_rs::NdefMessage;
 use nfc_reader::NfcTag;
 
@@ -18,22 +19,12 @@ pub struct TnepClient<'a, T> {
     pub(crate) cc: Cc,
 }
 
-#[cfg(debug_assertions)]
 fn dump_discovered_services(services: &[ServiceParameterRecord]) {
-    eprintln!(
-        "[DEBUG] discover.discovered_services: count={}",
-        services.len()
-    );
+    debug!("discover.discovered_services: count={}", services.len());
     for (idx, service) in services.iter().enumerate() {
-        eprintln!(
-            "[DEBUG] discover.discovered_services[{}]: {:?}",
-            idx, service
-        );
+        debug!("discover.discovered_services[{}]: {:?}", idx, service);
     }
 }
-
-#[cfg(not(debug_assertions))]
-fn dump_discovered_services(_services: &[ServiceParameterRecord]) {}
 
 impl<'a, T> TnepClient<'a, T>
 where

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use log::debug;
 use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -109,8 +110,8 @@ fn register_write_handler(
                 let req = args.GetRequestAsync()?.await?;
                 let ibuf = req.Value()?;
                 let bytes = ibuf_to_bytes(&ibuf).unwrap_or_default();
-                eprintln!(
-                    "[BLE] WriteRequested tid={:?} len={}",
+                debug!(
+                    "WriteRequested tid={:?} len={}",
                     std::thread::current().id(),
                     bytes.len()
                 );
@@ -326,7 +327,7 @@ impl ReaderTransport for WinRtBleReaderTransport {
             let elapsed_sec = start.elapsed().as_secs();
             if elapsed_sec >= last_log_sec + 5 {
                 last_log_sec = elapsed_sec;
-                // println!("[BLE] Waiting for message... elapsed={}s", elapsed_sec);
+                debug!("Waiting for message... elapsed={}s", elapsed_sec);
             }
             match tokio::time::timeout(Duration::from_millis(500), self.event_rx.recv()).await {
                 Ok(Some(Event::C2sWrite(payload))) => {
