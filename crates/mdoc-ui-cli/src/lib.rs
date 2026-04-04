@@ -27,7 +27,7 @@ impl MdocResultUi<()> for ConsoleMdocUi {
 
     fn render_result(&mut self, response: &DeviceResponse, _validation: &()) -> Result<()> {
         render_response_summary(response);
-        print_issuer_signed_data(response);
+        print_issuer_signed_data(response)?;
         Ok(())
     }
 }
@@ -144,16 +144,15 @@ pub fn print_portrait(image: &DynamicImage) -> Result<()> {
         ..Default::default()
     };
 
-    println!("Rendering portrait via Sixel...");
     viuer::print(image, &config).context("failed to print portrait in the terminal")?;
     println!();
     Ok(())
 }
 
-fn print_issuer_signed_data(response: &DeviceResponse) {
+fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     let Some(documents) = &response.documents else {
         println!("[INFO] No documents in DeviceResponse");
-        return;
+        return Ok(());
     };
 
     for (doc_idx, doc) in documents.iter().enumerate() {
@@ -181,11 +180,13 @@ fn print_issuer_signed_data(response: &DeviceResponse) {
                 );
 
                 if item.0.element_identifier == "portrait" {
-                    render_portrait(&item.0.element_value).unwrap();
+                    render_portrait(&item.0.element_value)?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 fn format_element_value(value: &ElementValue) -> String {

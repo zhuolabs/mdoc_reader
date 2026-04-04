@@ -94,20 +94,19 @@ cbor_string_map_struct! {
     }
 }
 
-pub fn find_element_value<'a>(
-    items: &'a [TaggedCborBytes<IssuerSignedItem>],
-    key: &str,
-) -> Option<&'a ElementValue> {
-    items
-        .iter()
-        .find(|item| item.0.element_identifier == key)
-        .map(|item| &item.0.element_value)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use minicbor::Encoder;
+
+    #[test]
+    fn decode_normal_types() {
+        let number: u64 = 42;
+        let encoded = minicbor::to_vec(&number).unwrap();
+        assert_eq!(encoded, vec![0x18, 0x2A]);
+        let decoded: u64 = minicbor::decode(&encoded).unwrap();
+        assert_eq!(decoded, number);
+    }
 
     #[test]
     fn parses_card_response() {
@@ -215,5 +214,15 @@ mod tests {
 
     fn bytes_value(value: &[u8]) -> ElementValue {
         ElementValue::Bytes(value.to_vec())
+    }
+
+    fn find_element_value<'a>(
+        items: &'a [TaggedCborBytes<IssuerSignedItem>],
+        key: &str,
+    ) -> Option<&'a ElementValue> {
+        items
+            .iter()
+            .find(|item| item.0.element_identifier == key)
+            .map(|item| &item.0.element_value)
     }
 }

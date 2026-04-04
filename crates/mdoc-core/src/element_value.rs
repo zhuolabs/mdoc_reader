@@ -1,3 +1,4 @@
+use minicbor::bytes::ByteVec;
 use minicbor::data::Tagged;
 use minicbor::{decode, encode, Decoder, Encoder};
 
@@ -45,27 +46,20 @@ impl<C> encode::Encode<C> for ElementValue {
 
 impl<'b, C> decode::Decode<'b, C> for ElementValue {
     fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> core::result::Result<Self, decode::Error> {
-        if let Some(value) = try_decode(d, |probe| {
-            let value: Tagged<1004, String> = probe.decode()?;
-            Ok(Self::FullDate(value))
-        })? {
-            return Ok(value);
+        if let Some(value) = try_decode::<String>(d)? {
+            return Ok(Self::String(value));
         }
-
-        if let Some(value) = try_decode(d, |probe| Ok(Self::String(probe.str()?.to_string())))? {
-            return Ok(value);
+        if let Some(value) = try_decode::<Tagged<1004, String>>(d)? {
+            return Ok(Self::FullDate(value.into()));
         }
-
-        if let Some(value) = try_decode(d, |probe| Ok(Self::Bool(probe.bool()?)))? {
-            return Ok(value);
+        if let Some(value) = try_decode::<bool>(d)? {
+            return Ok(Self::Bool(value.into()));
         }
-
-        if let Some(value) = try_decode(d, |probe| Ok(Self::U64(probe.u64()?)))? {
-            return Ok(value);
+        if let Some(value) = try_decode::<u64>(d)? {
+            return Ok(Self::U64(value.into()));
         }
-
-        if let Some(value) = try_decode(d, |probe| Ok(Self::Bytes(probe.bytes()?.to_vec())))? {
-            return Ok(value);
+        if let Some(value) = try_decode::<ByteVec>(d)? {
+            return Ok(Self::Bytes(value.into()));
         }
 
         let start = d.position();
@@ -77,10 +71,12 @@ impl<'b, C> decode::Decode<'b, C> for ElementValue {
 
 fn try_decode<'b, T>(
     d: &mut Decoder<'b>,
-    f: impl FnOnce(&mut Decoder<'b>) -> Result<T, decode::Error>,
-) -> Result<Option<T>, decode::Error> {
+) -> Result<Option<T>, decode::Error> where
+    T: decode::Decode<'b, ()>,
+{
     let mut probe = d.probe();
-    match f(&mut probe) {
+    let value: Result<T, decode::Error> = probe.decode();
+    match value {
         Ok(value) => {
             let position = probe.position();
             drop(probe);
