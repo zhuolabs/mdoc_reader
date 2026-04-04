@@ -41,14 +41,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use minicbor::{Decode, Encode};
     use super::*;
+    use minicbor::{Decode, Encode};
 
     #[derive(Debug, Clone, Encode, Decode)]
     #[cbor(array)]
     struct TestStruct {
-    #[n(0)]
-    pub version: String,
+        #[n(0)]
+        pub version: String,
     }
 
     #[derive(Debug, Clone, Encode, Decode)]
@@ -56,15 +56,14 @@ mod tests {
     struct TestStruct2 {
         #[n(0)]
         pub tagged: TaggedCborBytes<TestStruct>,
-    }    
+    }
 
     #[derive(Debug, Clone, Encode, Decode)]
     #[cbor(array)]
     struct TestStruct3 {
         #[n(0)]
         pub tagged: Tagged<24, ByteVec>,
-    }    
-
+    }
 
     #[test]
     fn tagged_cbor_bytes_is_tagged24() -> anyhow::Result<()> {
@@ -79,7 +78,7 @@ mod tests {
 
         let encoded = minicbor::to_vec(&value).expect("failed to encode");
         let encoded_value2 = minicbor::to_vec(&value2).expect("failed to encode value2");
-        
+
         assert_eq!(encoded, encoded_value2);
 
         Ok(())
@@ -99,9 +98,8 @@ mod tests {
         };
         let encoded_value2 = minicbor::to_vec(&value2).expect("failed to encode value2");
         let encoded_value3 = minicbor::to_vec(&value3).expect("failed to encode value3");
-        
+
         assert_eq!(encoded_value2, encoded_value3);
         Ok(())
     }
-
 }

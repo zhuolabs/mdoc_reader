@@ -22,7 +22,10 @@ pub(crate) fn two_inversion_reordered_packets<T: Clone>(
     let mut candidates = Vec::new();
     for permutation in two_inversion_permutations(packet_len) {
         if seen.insert(permutation.clone()) {
-            candidates.push((permutation.clone(), reorder_by_permutation(packets, &permutation)));
+            candidates.push((
+                permutation.clone(),
+                reorder_by_permutation(packets, &permutation),
+            ));
         }
     }
     candidates

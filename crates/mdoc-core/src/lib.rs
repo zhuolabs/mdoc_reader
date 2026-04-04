@@ -22,9 +22,9 @@ pub use device_request::{
     ItemRequest, NameSpaces, DEVICE_REQUEST_VERSION_1_0,
 };
 pub use device_response::{
-    DeviceResponse, IssuerSignedItem, MdocDocument,
-    DEVICE_RESPONSE_STATUS_CBOR_DECODING_ERROR, DEVICE_RESPONSE_STATUS_CBOR_VALIDATION_ERROR,
-    DEVICE_RESPONSE_STATUS_GENERAL_ERROR, DEVICE_RESPONSE_STATUS_OK,
+    DeviceResponse, IssuerSignedItem, MdocDocument, DEVICE_RESPONSE_STATUS_CBOR_DECODING_ERROR,
+    DEVICE_RESPONSE_STATUS_CBOR_VALIDATION_ERROR, DEVICE_RESPONSE_STATUS_GENERAL_ERROR,
+    DEVICE_RESPONSE_STATUS_OK,
 };
 pub use element_value::ElementValue;
 pub use ident::ble_ident;

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
-use minicbor::{Decode, Encode};
 use minicbor::decode::{Decoder, Error as DecodeError};
 use minicbor::encode::{Encoder, Error as EncodeError, Write};
+use minicbor::{Decode, Encode};
 use ndef_rs::payload::ExternalPayload;
 use ndef_rs::{NdefMessage, NdefRecord, TNF};
 

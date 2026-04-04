@@ -2,7 +2,7 @@ use crate::tagged_cbor_bytes::TaggedCborBytes;
 use crate::{CoseKeyPublic, DeviceEngagement};
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
-use ndef_rs::{NdefMessage};
+use ndef_rs::NdefMessage;
 
 #[derive(Debug, Clone, Encode, Decode)]
 #[cbor(array)]
@@ -16,9 +16,11 @@ pub struct SessionTranscript(
 #[cbor(array)]
 pub struct NFCHandover(
     /// HandoverSelect message bytes (NDEF).
-    #[n(0)] pub HandoverSelectBytes,
+    #[n(0)]
+    pub HandoverSelectBytes,
     /// HandoverRequest message bytes (NDEF).
-    #[n(1)] pub Option<HandoverRequestBytes>,
+    #[n(1)]
+    pub Option<HandoverRequestBytes>,
 );
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -46,4 +48,3 @@ impl TryFrom<&NdefMessage> for HandoverRequestBytes {
         Ok(Self(bytes.into()))
     }
 }
-
