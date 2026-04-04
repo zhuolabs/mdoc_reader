@@ -16,6 +16,7 @@ pub struct CoseSign1 {
     pub signature: ByteVec,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default, Decode, Encode)]
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
 pub struct SigStructureSignature1 {
@@ -46,11 +47,49 @@ pub struct HeaderMap {
     #[n(1)]
     pub alg: Option<CoseAlg>,
     #[n(33)]
-    pub x5chain: Option<X509Certificate>,
+    pub x5chain: Option<X5Chain>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct X5Chain(Vec<X509Certificate>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProtectedHeaderMap(pub Option<HeaderMap>);
+
+impl HeaderMap {
+    pub fn document_signer_cert(&self) -> Option<&X509Certificate> {
+        self.x5chain
+            .as_ref()
+            .and_then(|chain| chain.as_slice().first())
+    }
+
+    pub fn intermediate_certs(&self) -> &[X509Certificate] {
+        self.x5chain
+            .as_deref()
+            .map(|chain| chain.get(1..).unwrap_or(&[]))
+            .unwrap_or(&[])
+    }
+}
+
+impl X5Chain {
+    pub fn as_slice(&self) -> &[X509Certificate] {
+        &self.0
+    }
+}
+
+impl AsRef<[X509Certificate]> for X5Chain {
+    fn as_ref(&self) -> &[X509Certificate] {
+        self.as_slice()
+    }
+}
+
+impl core::ops::Deref for X5Chain {
+    type Target = [X509Certificate];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
 
 #[derive(Decode, Debug, Encode, PartialEq, Eq, Copy, Clone)]
 #[cbor(index_only)]
@@ -109,6 +148,62 @@ impl<'b, C> Decode<'b, C> for X509Certificate {
             minicbor::decode::Error::message("x5chain certificate is not valid DER X.509")
         })?;
         Ok(Self(cert))
+    }
+}
+
+impl<C> Encode<C> for X5Chain {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut Encoder<W>,
+        _ctx: &mut C,
+    ) -> core::result::Result<(), minicbor::encode::Error<W::Error>> {
+        match self.0.len() {
+            0 => {
+                return Err(minicbor::encode::Error::message(
+                    "x5chain must contain at least one certificate",
+                ));
+            }
+            1 => {
+                e.encode(&self.0[0])?;
+            }
+            _ => {
+                e.array(self.0.len() as u64)?;
+                for cert in &self.0 {
+                    e.encode(cert)?;
+                }
+            }
+        };
+
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for X5Chain {
+    fn decode(
+        d: &mut Decoder<'b>,
+        _ctx: &mut C,
+    ) -> core::result::Result<Self, minicbor::decode::Error> {
+        match d.datatype()? {
+            minicbor::data::Type::Bytes => Ok(Self(vec![d.decode::<X509Certificate>()?])),
+            minicbor::data::Type::Array => {
+                let len = d.array()?.ok_or_else(|| {
+                    minicbor::decode::Error::message("x5chain array must be definite-length")
+                })?;
+                if len == 0 {
+                    return Err(minicbor::decode::Error::message(
+                        "x5chain array must contain at least one certificate",
+                    ));
+                }
+                let mut certs = Vec::with_capacity(len as usize);
+                for _ in 0..len {
+                    certs.push(d.decode::<X509Certificate>()?);
+                }
+                Ok(Self(certs))
+            }
+            _ => Err(minicbor::decode::Error::message(
+                "x5chain must be a bstr certificate or array of bstr certificates",
+            )),
+        }
     }
 }
 
@@ -230,13 +325,25 @@ mod tests {
     }
 
     #[test]
-    fn x5chain_rejects_array_form() {
+    fn x5chain_rejects_empty_array_form() {
         let mut e = Encoder::new(Vec::new());
-        e.array(2).unwrap();
-        e.bytes(&[0x30, 0x03, 0x02, 0x01, 0x01]).unwrap();
-        e.bytes(&[0x30, 0x03, 0x02, 0x01, 0x02]).unwrap();
+        e.map(1).unwrap();
+        e.i8(33).unwrap();
+        e.array(0).unwrap();
         let encoded = e.into_writer();
-        let result = minicbor::decode::<X509Certificate>(&encoded);
+        let result = minicbor::decode::<HeaderMap>(&encoded);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn x5chain_rejects_invalid_der_in_array_form() {
+        let mut e = Encoder::new(Vec::new());
+        e.map(1).unwrap();
+        e.i8(33).unwrap();
+        e.array(1).unwrap();
+        e.bytes(&[0x30, 0x03, 0x02, 0x01, 0x01]).unwrap();
+        let encoded = e.into_writer();
+        let result = minicbor::decode::<HeaderMap>(&encoded);
         assert!(result.is_err());
     }
 

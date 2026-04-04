@@ -158,8 +158,29 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     for (doc_idx, doc) in documents.iter().enumerate() {
         println!("[INFO] Document[{doc_idx}] docType={}", doc.doc_type);
         if let Some(x5chain) = &doc.issuer_signed.issuer_auth.unprotected.x5chain {
-            println!("[INFO]   issuerAuth.x5chain certs=1");
-            print_x509_certificate_info(x5chain);
+            println!("[INFO]   issuerAuth.x5chain certs={}", x5chain.len());
+
+            if let Some(document_signer_cert) = doc
+                .issuer_signed
+                .issuer_auth
+                .unprotected
+                .document_signer_cert()
+            {
+                println!("[INFO]   issuerAuth.x5chain[0] role=document-signer");
+                print_x509_certificate_info(document_signer_cert);
+            }
+
+            for (idx, cert) in doc
+                .issuer_signed
+                .issuer_auth
+                .unprotected
+                .intermediate_certs()
+                .iter()
+                .enumerate()
+            {
+                println!("[INFO]   issuerAuth.x5chain[{}] role=intermediate", idx + 1);
+                print_x509_certificate_info(cert);
+            }
         }
 
         let Some(name_spaces) = &doc.issuer_signed.name_spaces else {
