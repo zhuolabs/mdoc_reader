@@ -16,6 +16,30 @@ pub struct CoseSign1 {
     pub signature: ByteVec,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
+#[cbor(array)]
+pub struct SigStructureSignature1 {
+    #[n(0)]
+    pub context: String,
+    #[n(1)]
+    pub body_protected: ByteVec,
+    #[n(2)]
+    pub external_aad: ByteVec,
+    #[n(3)]
+    pub payload: ByteVec,
+}
+
+impl SigStructureSignature1 {
+    pub fn new(body_protected: Vec<u8>, external_aad: &[u8], payload: &[u8]) -> Self {
+        Self {
+            context: "Signature1".to_string(),
+            body_protected: ByteVec::from(body_protected),
+            external_aad: ByteVec::from(external_aad.to_vec()),
+            payload: ByteVec::from(payload.to_vec()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Decode, PartialEq, Eq, Encode, Default)]
 #[cbor(map)]
 pub struct HeaderMap {
@@ -127,7 +151,6 @@ impl<'b, C> Decode<'b, C> for ProtectedHeaderMap {
     }
 }
 
-
 impl CoseSign1 {
     pub fn decode_payload_cbor<T>(&self) -> Result<T>
     where
@@ -140,6 +163,32 @@ impl CoseSign1 {
         let decoded = minicbor::decode(payload.as_slice())?;
         Ok(decoded)
     }
+
+    pub fn build_sig_structure_signature1(&self, external_aad: &[u8]) -> Result<Vec<u8>> {
+        let payload = self
+            .payload
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
+        build_sig_structure_signature1(&self.protected, external_aad, payload)
+    }
+}
+
+fn protected_header_bytes(protected: &ProtectedHeaderMap) -> Result<Vec<u8>> {
+    let bytes = match &protected.0 {
+        None => vec![],
+        Some(map) => minicbor::to_vec(map)?,
+    };
+    Ok(bytes)
+}
+
+pub fn build_sig_structure_signature1(
+    protected: &ProtectedHeaderMap,
+    external_aad: &[u8],
+    payload: &[u8],
+) -> Result<Vec<u8>> {
+    let body_protected = protected_header_bytes(protected)?;
+    let sig_structure = SigStructureSignature1::new(body_protected, external_aad, payload);
+    Ok(minicbor::to_vec(sig_structure)?)
 }
 
 #[cfg(test)]
@@ -215,5 +264,54 @@ mod tests {
 
         let result = sign1.decode_payload_cbor::<String>();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn sig_structure_signature1_roundtrip() {
+        let sig_structure = SigStructureSignature1::new(vec![], b"", b"payload");
+        let encoded = minicbor::to_vec(&sig_structure).unwrap();
+        let decoded: SigStructureSignature1 = minicbor::decode(&encoded).unwrap();
+        assert_eq!(decoded, sig_structure);
+        assert_eq!(decoded.context, "Signature1");
+        assert_eq!(decoded.external_aad.as_slice(), b"");
+    }
+
+    #[test]
+    fn sig_structure_signature1_encoding_matches_expected() {
+        let sig_structure = SigStructureSignature1::new(vec![], b"", b"\x01\x02\x03");
+        let encoded = minicbor::to_vec(&sig_structure).unwrap();
+        let expected = vec![
+            0x84, 0x6A, 0x53, 0x69, 0x67, 0x6E, 0x61, 0x74, 0x75, 0x72, 0x65, 0x31, 0x40, 0x40,
+            0x43, 0x01, 0x02, 0x03,
+        ];
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn build_sig_structure_signature1_builds_signature_input() {
+        let payload = b"\xAA\xBB";
+        let encoded =
+            build_sig_structure_signature1(&ProtectedHeaderMap(None), b"", payload).unwrap();
+        let expected = vec![
+            0x84, 0x6A, 0x53, 0x69, 0x67, 0x6E, 0x61, 0x74, 0x75, 0x72, 0x65, 0x31, 0x40, 0x40,
+            0x42, 0xAA, 0xBB,
+        ];
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn cose_sign1_build_sig_structure_signature1_uses_payload() {
+        let sign1 = CoseSign1 {
+            protected: ProtectedHeaderMap(None),
+            unprotected: HeaderMap::default(),
+            payload: Some(ByteVec::from(vec![0x01, 0x02])),
+            signature: ByteVec::from(vec![0; 64]),
+        };
+        let encoded = sign1.build_sig_structure_signature1(b"").unwrap();
+        let expected = vec![
+            0x84, 0x6A, 0x53, 0x69, 0x67, 0x6E, 0x61, 0x74, 0x75, 0x72, 0x65, 0x31, 0x40, 0x40,
+            0x42, 0x01, 0x02,
+        ];
+        assert_eq!(encoded, expected);
     }
 }
