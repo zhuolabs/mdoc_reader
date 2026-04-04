@@ -96,9 +96,9 @@ fn render_response_summary(response: &DeviceResponse) {
 }
 
 pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
-    let ElementValue::Bytes(bytes) = portrait else {
-        anyhow::bail!("portrait element value is not bytes");
-    };
+    let bytes = portrait
+        .bytes()
+        .context("portrait element value is not bytes")?;
     let image = decode_portrait(&bytes)?;
     print_portrait(&image)
 }
@@ -156,10 +156,7 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     };
 
     for (doc_idx, doc) in documents.iter().enumerate() {
-        println!(
-            "[INFO] Document[{doc_idx}] docType={}",
-            doc.doc_type
-        );
+        println!("[INFO] Document[{doc_idx}] docType={}", doc.doc_type);
         if let Some(x5chain) = &doc.issuer_signed.issuer_auth.unprotected.x5chain {
             println!("[INFO]   issuerAuth.x5chain certs=1");
             print_x509_certificate_info(x5chain);
@@ -190,14 +187,23 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
 }
 
 fn format_element_value(value: &ElementValue) -> String {
-    match value {
-        ElementValue::String(v) => format!("str({v})"),
-        ElementValue::FullDate(v) => format!("full-date({})", v.value()),
-        ElementValue::Bool(v) => format!("bool({v})"),
-        ElementValue::U64(v) => format!("u64({v})"),
-        ElementValue::Bytes(v) => format!("bytes(len={})", v.len()),
-        ElementValue::RawCborBytes(v) => format!("cbor({:02X?})", v),
+    if let Some(v) = value.string() {
+        return format!("str({v})");
     }
+    if let Some(v) = value.full_date() {
+        return format!("full-date({})", v.format("%Y-%m-%d"));
+    }
+    if let Some(v) = value.bool() {
+        return format!("bool({v})");
+    }
+    if let Some(v) = value.u64() {
+        return format!("u64({v})");
+    }
+    if let Some(v) = value.bytes() {
+        return format!("bytes(len={})", v.len());
+    }
+
+    format!("cbor({:02X?})", value.raw_cbor_bytes())
 }
 
 fn print_x509_certificate_info(cert: &X509Certificate) {
@@ -205,10 +211,7 @@ fn print_x509_certificate_info(cert: &X509Certificate) {
     let tbs = &cert.tbs_certificate;
 
     println!("[INFO]     x509.version={:?}", tbs.version);
-    println!(
-        "[INFO]     x509.serial_number={}",
-        tbs.serial_number
-    );
+    println!("[INFO]     x509.serial_number={}", tbs.serial_number);
     println!("[INFO]     x509.issuer={}", tbs.issuer);
     println!("[INFO]     x509.subject={}", tbs.subject);
     println!(

@@ -159,11 +159,11 @@ mod tests {
         assert_eq!(decoded, response);
         assert_eq!(
             find_element_value(&signed_data, "family_name"),
-            Some(&ElementValue::String("Mustermann".to_string()))
+            Some(&ElementValue::from_string("Mustermann"))
         );
         assert_eq!(
             find_element_value(&signed_data, "portrait"),
-            Some(&ElementValue::Bytes(vec![1, 2, 3, 4].into()))
+            Some(&ElementValue::from_bytes(vec![1, 2, 3, 4]))
         );
     }
 
@@ -174,7 +174,7 @@ mod tests {
         let encoded_null = e.into_writer();
 
         let value: ElementValue = minicbor::decode(&encoded_null).unwrap();
-        assert_eq!(value, ElementValue::RawCborBytes(encoded_null.clone()));
+        assert_eq!(value, ElementValue::new(encoded_null.clone()));
         let re_encoded = minicbor::to_vec(&value).unwrap();
         assert_eq!(re_encoded, encoded_null);
     }
@@ -201,19 +201,19 @@ mod tests {
     }
 
     fn string_value(value: &str) -> ElementValue {
-        ElementValue::String(value.to_string())
+        ElementValue::from_string(value)
     }
 
     fn bool_value(value: bool) -> ElementValue {
-        ElementValue::Bool(value)
+        ElementValue::from_bool(value)
     }
 
     fn u64_value(value: u64) -> ElementValue {
-        ElementValue::U64(value)
+        ElementValue::from_u64(value)
     }
 
     fn bytes_value(value: &[u8]) -> ElementValue {
-        ElementValue::Bytes(value.to_vec().into())
+        ElementValue::from_bytes(value.to_vec())
     }
 
     fn find_element_value<'a>(
