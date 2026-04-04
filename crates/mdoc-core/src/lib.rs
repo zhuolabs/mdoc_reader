@@ -14,7 +14,10 @@ mod session_transcript;
 mod tagged_cbor_bytes;
 
 pub use cose_key::{CoseKeyPrivate, CoseKeyPublic};
-pub use cose_sign::{CoseAlg, CoseSign1, HeaderMap, ProtectedHeaderMap, X509Certificate};
+pub use cose_sign::{
+    build_sig_structure_signature1, CoseAlg, CoseSign1, HeaderMap, ProtectedHeaderMap,
+    SigStructureSignature1, X509Certificate,
+};
 pub use device_engagement::{
     DeviceEngagement, OriginInfo, RetrievalMethod, RetrievalOptions, DEVICE_ENGAGEMENT_RECORD_TYPE,
 };
