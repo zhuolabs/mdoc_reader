@@ -127,7 +127,6 @@ impl<'b, C> Decode<'b, C> for ProtectedHeaderMap {
     }
 }
 
-
 impl CoseSign1 {
     pub fn decode_payload_cbor<T>(&self) -> Result<T>
     where
