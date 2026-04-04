@@ -1,9 +1,7 @@
 use crate::cbor_string_map_struct::cbor_string_map_struct;
-use crate::{CoseSign1, TaggedCborBytes};
+use crate::{CoseSign1, ElementValue, TaggedCborBytes};
 use anyhow::Result;
-use minicbor::data::Type;
 use minicbor::bytes::ByteVec;
-use minicbor::{decode, encode, Decoder, Encoder};
 use std::collections::BTreeMap;
 
 pub const DEVICE_RESPONSE_STATUS_OK: u64 = 0;
@@ -96,61 +94,6 @@ cbor_string_map_struct! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ElementValue {
-    String(String),
-    Bool(bool),
-    U64(u64),
-    Bytes(Vec<u8>),
-    RawBytes(Vec<u8>),
-}
-
-impl<C> encode::Encode<C> for ElementValue {
-    fn encode<W: encode::Write>(
-        &self,
-        e: &mut Encoder<W>,
-        _ctx: &mut C,
-    ) -> core::result::Result<(), encode::Error<W::Error>> {
-        match self {
-            Self::String(value) => {
-                e.str(value)?;
-            }
-            Self::Bool(value) => {
-                e.bool(*value)?;
-            }
-            Self::U64(value) => {
-                e.u64(*value)?;
-            }
-            Self::Bytes(value) => {
-                e.bytes(value)?;
-            }
-            Self::RawBytes(value) => {
-                e.writer_mut()
-                    .write_all(value)
-                    .map_err(encode::Error::write)?;
-            }
-        };
-        Ok(())
-    }
-}
-
-impl<'b, C> decode::Decode<'b, C> for ElementValue {
-    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> core::result::Result<Self, decode::Error> {
-        match d.datatype()? {
-            Type::String => Ok(Self::String(d.str()?.to_string())),
-            Type::Bool => Ok(Self::Bool(d.bool()?)),
-            Type::U8 | Type::U16 | Type::U32 | Type::U64 => Ok(Self::U64(d.u64()?)),
-            Type::Bytes => Ok(Self::Bytes(d.bytes()?.to_vec())),
-            _ => {
-                let start = d.position();
-                d.skip()?;
-                let end = d.position();
-                Ok(Self::RawBytes(d.input()[start..end].to_vec()))
-            }
-        }
-    }
-}
-
 pub fn find_element_value<'a>(
     items: &'a [TaggedCborBytes<IssuerSignedItem>],
     key: &str,
@@ -164,6 +107,7 @@ pub fn find_element_value<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minicbor::Encoder;
 
     #[test]
     fn parses_card_response() {

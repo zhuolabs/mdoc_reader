@@ -191,6 +191,7 @@ fn print_issuer_signed_data(response: &DeviceResponse) {
 fn format_element_value(value: &ElementValue) -> String {
     match value {
         ElementValue::String(v) => format!("str({v})"),
+        ElementValue::FullDate(v) => format!("full-date({})", v.value()),
         ElementValue::Bool(v) => format!("bool({v})"),
         ElementValue::U64(v) => format!("u64({v})"),
         ElementValue::Bytes(v) => format!("bytes(len={})", v.len()),
