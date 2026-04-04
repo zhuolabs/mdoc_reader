@@ -163,7 +163,7 @@ mod tests {
         );
         assert_eq!(
             find_element_value(&signed_data, "portrait"),
-            Some(&ElementValue::Bytes(vec![1, 2, 3, 4]))
+            Some(&ElementValue::Bytes(vec![1, 2, 3, 4].into()))
         );
     }
 
@@ -174,7 +174,7 @@ mod tests {
         let encoded_null = e.into_writer();
 
         let value: ElementValue = minicbor::decode(&encoded_null).unwrap();
-        assert_eq!(value, ElementValue::RawBytes(encoded_null.clone()));
+        assert_eq!(value, ElementValue::RawCborBytes(encoded_null.clone()));
         let re_encoded = minicbor::to_vec(&value).unwrap();
         assert_eq!(re_encoded, encoded_null);
     }
@@ -213,7 +213,7 @@ mod tests {
     }
 
     fn bytes_value(value: &[u8]) -> ElementValue {
-        ElementValue::Bytes(value.to_vec())
+        ElementValue::Bytes(value.to_vec().into())
     }
 
     fn find_element_value<'a>(

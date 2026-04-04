@@ -196,7 +196,7 @@ fn format_element_value(value: &ElementValue) -> String {
         ElementValue::Bool(v) => format!("bool({v})"),
         ElementValue::U64(v) => format!("u64({v})"),
         ElementValue::Bytes(v) => format!("bytes(len={})", v.len()),
-        ElementValue::RawBytes(v) => format!("cbor({:02X?})", v),
+        ElementValue::RawCborBytes(v) => format!("cbor({:02X?})", v),
     }
 }
 
