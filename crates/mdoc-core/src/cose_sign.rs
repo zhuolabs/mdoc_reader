@@ -1,3 +1,4 @@
+use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Decoder, Encode, Encoder};
 use x509_cert::der::{Decode as DerDecode, Encode as DerEncode};
@@ -126,6 +127,21 @@ impl<'b, C> Decode<'b, C> for ProtectedHeaderMap {
     }
 }
 
+
+impl CoseSign1 {
+    pub fn decode_payload_cbor<T>(&self) -> Result<T>
+    where
+        for<'a> T: Decode<'a, ()>,
+    {
+        let payload = self
+            .payload
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
+        let decoded = minicbor::decode(payload.as_slice())?;
+        Ok(decoded)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +188,32 @@ mod tests {
         e.bytes(&[0x30, 0x03, 0x02, 0x01, 0x02]).unwrap();
         let encoded = e.into_writer();
         let result = minicbor::decode::<X509Certificate>(&encoded);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_payload_cbor_decodes_payload() {
+        let sign1 = CoseSign1 {
+            protected: ProtectedHeaderMap(None),
+            unprotected: HeaderMap::default(),
+            payload: Some(ByteVec::from(minicbor::to_vec("hello").unwrap())),
+            signature: ByteVec::from(vec![0; 64]),
+        };
+
+        let payload: String = sign1.decode_payload_cbor().unwrap();
+        assert_eq!(payload, "hello");
+    }
+
+    #[test]
+    fn decode_payload_cbor_rejects_missing_payload() {
+        let sign1 = CoseSign1 {
+            protected: ProtectedHeaderMap(None),
+            unprotected: HeaderMap::default(),
+            payload: None,
+            signature: ByteVec::from(vec![0; 64]),
+        };
+
+        let result = sign1.decode_payload_cbor::<String>();
         assert!(result.is_err());
     }
 }
