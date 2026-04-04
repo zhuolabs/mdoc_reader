@@ -12,61 +12,52 @@ pub enum ElementValue {
     RawCborBytes(Vec<u8>),
 }
 
-impl<C> encode::Encode<C> for ElementValue {
-    fn encode<W: encode::Write>(
-        &self,
-        e: &mut Encoder<W>,
-        ctx: &mut C,
-    ) -> core::result::Result<(), encode::Error<W::Error>> {
-        match self {
-            Self::String(value) => {
-                value.encode(e, ctx)?;
+macro_rules! element_value_codec {
+    ($( $variant:ident($type:ty), )* $(,)?) => {
+        impl<C> encode::Encode<C> for ElementValue {
+            fn encode<W: encode::Write>(
+                &self,
+                e: &mut Encoder<W>,
+                ctx: &mut C,
+            ) -> core::result::Result<(), encode::Error<W::Error>> {
+                match self {
+                    $( Self::$variant(value) => value.encode(e, ctx)?, )*
+                    Self::RawCborBytes(value) => {
+                        e.writer_mut()
+                            .write_all(value)
+                            .map_err(encode::Error::write)?;
+                    }
+                };
+                Ok(())
             }
-            Self::FullDate(value) => {
-                value.encode(e, ctx)?;
+        }
+
+        impl<'b, C> decode::Decode<'b, C> for ElementValue {
+            fn decode(
+                d: &mut Decoder<'b>,
+                _ctx: &mut C,
+            ) -> core::result::Result<Self, decode::Error> {
+                $(
+                    if let Some(value) = try_decode::<$type>(d) {
+                        return Ok(Self::$variant(value));
+                    }
+                )*
+
+                let start = d.position();
+                d.skip()?;
+                let end = d.position();
+                Ok(Self::RawCborBytes(d.input()[start..end].to_vec()))
             }
-            Self::Bool(value) => {
-                value.encode(e, ctx)?;
-            }
-            Self::U64(value) => {
-                value.encode(e, ctx)?;
-            }
-            Self::Bytes(value) => {
-                value.encode(e, ctx)?;
-            }
-            Self::RawCborBytes(value) => {
-                e.writer_mut()
-                    .write_all(value)
-                    .map_err(encode::Error::write)?;
-            }
-        };
-        Ok(())
-    }
+        }
+    };
 }
 
-impl<'b, C> decode::Decode<'b, C> for ElementValue {
-    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> core::result::Result<Self, decode::Error> {
-        if let Some(value) = try_decode::<String>(d) {
-            return Ok(Self::String(value));
-        }
-        if let Some(value) = try_decode::<Tagged<1004, String>>(d) {
-            return Ok(Self::FullDate(value));
-        }
-        if let Some(value) = try_decode::<bool>(d) {
-            return Ok(Self::Bool(value));
-        }
-        if let Some(value) = try_decode::<u64>(d) {
-            return Ok(Self::U64(value));
-        }
-        if let Some(value) = try_decode::<ByteVec>(d) {
-            return Ok(Self::Bytes(value));
-        }
-
-        let start = d.position();
-        d.skip()?;
-        let end = d.position();
-        Ok(Self::RawCborBytes(d.input()[start..end].to_vec()))
-    }
+element_value_codec! {
+    String(String),
+    FullDate(Tagged<1004, String>),
+    Bool(bool),
+    U64(u64),
+    Bytes(ByteVec),
 }
 
 fn try_decode<'b, T>(
