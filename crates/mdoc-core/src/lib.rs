@@ -6,6 +6,8 @@ mod device_request;
 mod device_response;
 mod element_value;
 mod ident;
+mod issuer_data_auth;
+mod mobile_security_object;
 mod reader_engagement;
 mod session_encryption;
 mod session_messages;
@@ -28,6 +30,11 @@ pub use device_response::{
 };
 pub use element_value::ElementValue;
 pub use ident::ble_ident;
+pub use issuer_data_auth::verify_issuer_data_auth;
+pub use mobile_security_object::{
+    DataElements, DeviceKeyInfo, DigestIds, KeyAuthorizations, KeyInfo, MobileSecurityObject,
+    ValidityInfo, ValueDigests,
+};
 pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
 pub use session_encryption::{MdocRole, SessionEncryption};
 pub use session_messages::{SessionData, SessionEstablishment};
