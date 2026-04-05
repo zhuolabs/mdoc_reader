@@ -248,6 +248,7 @@ impl DigestLookup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minicbor::{Decode, Encode};
     use minicbor::bytes::ByteVec;
     use p256::ecdsa::signature::Signer;
     use p256::pkcs8::DecodePrivateKey;
@@ -256,8 +257,8 @@ mod tests {
 
     use crate::device_response::{DeviceAuth, DeviceSigned, IssuerSigned};
     use crate::{
-        build_sig_structure_signature1, CborBytes, CoseAlg, CoseSign1, HeaderMap, IssuerSignedItem,
-        MobileSecurityObject, ProtectedHeaderMap, TaggedCborBytes, ValidityInfo, X5Chain,
+        CborBytes, CoseAlg, CoseSign1, HeaderMap, IssuerSignedItem, MobileSecurityObject,
+        ProtectedHeaderMap, TaggedCborBytes, ValidityInfo, X5Chain,
     };
 
     #[test]
@@ -405,8 +406,7 @@ mod tests {
         };
         let payload_bytes = CborBytes::from(&payload);
         let sig_structure =
-            build_sig_structure_signature1(&protected, b"", payload_bytes.raw_cbor_bytes())
-                .unwrap();
+            build_sig_structure_for_test(&protected, payload_bytes.raw_cbor_bytes());
         let signature: p256::ecdsa::Signature = signing_key.sign(&sig_structure);
 
         CoseSign1 {
@@ -428,5 +428,32 @@ mod tests {
             element_identifier: element_identifier.to_string(),
             element_value: crate::ElementValue::new(minicbor::to_vec(value).unwrap()),
         })
+    }
+
+    fn build_sig_structure_for_test(protected: &ProtectedHeaderMap, payload: &[u8]) -> Vec<u8> {
+        let body_protected = match &protected.0 {
+            None => Vec::new(),
+            Some(map) => minicbor::to_vec(map).unwrap(),
+        };
+        minicbor::to_vec(TestSigStructureSignature1 {
+            context: "Signature1".to_string(),
+            body_protected: ByteVec::from(body_protected),
+            external_aad: ByteVec::from(Vec::<u8>::new()),
+            payload: ByteVec::from(payload.to_vec()),
+        })
+        .unwrap()
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
+    #[cbor(array)]
+    struct TestSigStructureSignature1 {
+        #[n(0)]
+        context: String,
+        #[n(1)]
+        body_protected: ByteVec,
+        #[n(2)]
+        external_aad: ByteVec,
+        #[n(3)]
+        payload: ByteVec,
     }
 }

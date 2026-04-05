@@ -24,7 +24,7 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
-pub struct SigStructureSignature1 {
+struct SigStructureSignature1 {
     #[n(0)]
     pub context: String,
     #[n(1)]
@@ -257,7 +257,7 @@ where
         Ok(payload.decode()?)
     }
 
-    pub fn build_sig_structure_signature1(&self, external_aad: &[u8]) -> Result<Vec<u8>> {
+    fn build_sig_structure_signature1(&self, external_aad: &[u8]) -> Result<Vec<u8>> {
         let payload = self
             .payload
             .as_ref()
@@ -370,7 +370,7 @@ fn protected_header_bytes(protected: &ProtectedHeaderMap) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub fn build_sig_structure_signature1(
+fn build_sig_structure_signature1(
     protected: &ProtectedHeaderMap,
     external_aad: &[u8],
     payload: &[u8],
