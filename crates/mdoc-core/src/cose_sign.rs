@@ -1,9 +1,10 @@
 use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Decoder, Encode, Encoder};
+use p256::ecdsa::signature::Verifier;
 use x509_cert::der::{Decode as DerDecode, Encode as DerEncode};
 
-use crate::{CborAny, CborBytes};
+use crate::{CborAny, CborBytes, CoseKeyPublic};
 
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
@@ -76,6 +77,13 @@ impl HeaderMap {
 }
 
 impl X5Chain {
+    pub fn from_certificates(certs: Vec<x509_cert::Certificate>) -> Result<Self> {
+        if certs.is_empty() {
+            anyhow::bail!("x5chain must contain at least one certificate");
+        }
+        Ok(Self(certs))
+    }
+
     pub fn as_slice(&self) -> &[x509_cert::Certificate] {
         &self.0
     }
@@ -256,6 +264,102 @@ where
             .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
         build_sig_structure_signature1(&self.protected, external_aad, payload.raw_cbor_bytes())
     }
+
+    pub fn resolved_alg(&self) -> Result<CoseAlg> {
+        match (
+            self.protected.0.as_ref().and_then(|headers| headers.alg),
+            self.unprotected.alg,
+        ) {
+            (Some(protected), Some(unprotected)) if protected != unprotected => {
+                anyhow::bail!(
+                    "COSE_Sign1 algorithm mismatch between protected ({protected:?}) and unprotected ({unprotected:?}) headers"
+                );
+            }
+            (Some(alg), _) | (_, Some(alg)) => Ok(alg),
+            (None, None) => anyhow::bail!("COSE_Sign1 algorithm is missing from both header maps"),
+        }
+    }
+
+    pub fn resolved_x5chain(&self) -> Result<Option<&X5Chain>> {
+        match (
+            self.protected
+                .0
+                .as_ref()
+                .and_then(|headers| headers.x5chain.as_ref()),
+            self.unprotected.x5chain.as_ref(),
+        ) {
+            (Some(protected), Some(unprotected)) if protected != unprotected => {
+                anyhow::bail!(
+                    "COSE_Sign1 x5chain mismatch between protected and unprotected headers"
+                );
+            }
+            (Some(x5chain), _) | (_, Some(x5chain)) => Ok(Some(x5chain)),
+            (None, None) => Ok(None),
+        }
+    }
+
+    pub fn resolved_document_signer_cert(&self) -> Result<Option<&x509_cert::Certificate>> {
+        Ok(self
+            .resolved_x5chain()?
+            .and_then(|chain| chain.as_slice().first()))
+    }
+
+    pub fn verify_signature_with_public_key(
+        &self,
+        public_key: &CoseKeyPublic,
+        external_aad: &[u8],
+    ) -> Result<()> {
+        match self.resolved_alg()? {
+            CoseAlg::ES256 | CoseAlg::ES256P256 => {
+                let encoded_point = p256::EncodedPoint::from_affine_coordinates(
+                    public_key.x.as_slice().into(),
+                    public_key.y.as_slice().into(),
+                    false,
+                );
+                let verifying_key =
+                    p256::ecdsa::VerifyingKey::from_sec1_bytes(encoded_point.as_bytes())
+                        .map_err(|_| anyhow::anyhow!("invalid P-256 public key"))?;
+                self.verify_signature_with_verifying_key(&verifying_key, external_aad)
+            }
+            alg => anyhow::bail!("unsupported COSE algorithm for signature verification: {alg:?}"),
+        }
+    }
+
+    pub fn verify_signature_with_certificate(
+        &self,
+        certificate: &x509_cert::Certificate,
+        external_aad: &[u8],
+    ) -> Result<()> {
+        match self.resolved_alg()? {
+            CoseAlg::ES256 | CoseAlg::ES256P256 => {
+                let sec1_bytes = certificate
+                    .tbs_certificate
+                    .subject_public_key_info
+                    .subject_public_key
+                    .as_bytes()
+                    .ok_or_else(|| anyhow::anyhow!("certificate public key is not byte-aligned"))?;
+                let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(sec1_bytes)
+                    .map_err(|_| {
+                        anyhow::anyhow!("certificate public key is not a valid P-256 key")
+                    })?;
+                self.verify_signature_with_verifying_key(&verifying_key, external_aad)
+            }
+            alg => anyhow::bail!("unsupported COSE algorithm for signature verification: {alg:?}"),
+        }
+    }
+
+    fn verify_signature_with_verifying_key(
+        &self,
+        verifying_key: &p256::ecdsa::VerifyingKey,
+        external_aad: &[u8],
+    ) -> Result<()> {
+        let sig_structure = self.build_sig_structure_signature1(external_aad)?;
+        let signature = p256::ecdsa::Signature::from_slice(self.signature.as_slice())
+            .map_err(|_| anyhow::anyhow!("invalid ES256 signature bytes"))?;
+        verifying_key
+            .verify(&sig_structure, &signature)
+            .map_err(|_| anyhow::anyhow!("COSE_Sign1 signature verification failed"))
+    }
 }
 
 fn protected_header_bytes(protected: &ProtectedHeaderMap) -> Result<Vec<u8>> {
@@ -279,6 +383,8 @@ pub fn build_sig_structure_signature1(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use p256::ecdsa::signature::Signer;
+    use p256::ecdsa::SigningKey;
 
     #[test]
     fn protected_header_map_accepts_empty_bstr() {
@@ -410,5 +516,54 @@ mod tests {
             0x42, 0x01, 0x02,
         ];
         assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn resolved_alg_rejects_header_mismatch() {
+        let sign1 = CoseSign1::<CborAny> {
+            protected: ProtectedHeaderMap(Some(HeaderMap {
+                alg: Some(CoseAlg::ES256),
+                x5chain: None,
+            })),
+            unprotected: HeaderMap {
+                alg: Some(CoseAlg::ED25519),
+                x5chain: None,
+            },
+            payload: Some(CborBytes::from_raw_bytes(vec![0x01])),
+            signature: ByteVec::from(vec![0; 64]),
+        };
+
+        assert!(sign1.resolved_alg().is_err());
+    }
+
+    #[test]
+    fn verify_signature_with_public_key_accepts_valid_es256_signature() {
+        let signing_key = SigningKey::from_bytes((&[7u8; 32]).into()).unwrap();
+        let payload = CborBytes::from_raw_bytes(vec![0x01, 0x02, 0x03]);
+        let protected = ProtectedHeaderMap(Some(HeaderMap {
+            alg: Some(CoseAlg::ES256),
+            x5chain: None,
+        }));
+        let sig_structure =
+            build_sig_structure_signature1(&protected, b"", payload.raw_cbor_bytes()).unwrap();
+        let signature: p256::ecdsa::Signature = signing_key.sign(&sig_structure);
+        let sign1 = CoseSign1::<CborAny> {
+            protected,
+            unprotected: HeaderMap::default(),
+            payload: Some(payload),
+            signature: ByteVec::from(signature.to_bytes().to_vec()),
+        };
+        let public_key = p256::PublicKey::from_sec1_bytes(
+            signing_key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes(),
+        )
+        .unwrap();
+        let cose_key = CoseKeyPublic::try_from(public_key).unwrap();
+
+        sign1
+            .verify_signature_with_public_key(&cose_key, b"")
+            .unwrap();
     }
 }

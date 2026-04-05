@@ -22,4 +22,5 @@ chrono = { version = "0.4", default-features = true }
 
 [dev-dependencies]
 hex = "0.4"
+rcgen = "0.13"
 tokio = { version = "1", features = ["macros", "rt"] }
