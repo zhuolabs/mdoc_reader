@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
     let transport_factory = WinRtBleReaderTransportFactory;
     info!("BLE transport factory selected");
-    let response = read_mdoc(
+    let result = read_mdoc(
         &mut nfc,
         &transport_factory,
         &device_request,
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    render_device_response(&response)
+    render_device_response(&result.device_response, &result.validation)
 }
 
 fn load_config_json(cli: &Cli) -> anyhow::Result<Value> {

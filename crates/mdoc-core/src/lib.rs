@@ -32,11 +32,14 @@ pub use issuer_data_auth::{
     verify_issuer_data_auth, IssuerDataAuthContext, IssuerDataAuthError, VerifiedMso,
 };
 pub use mobile_security_object::{
-    DataElements, DeviceKeyInfo, DigestIds, KeyAuthorizations, KeyInfo, MobileSecurityObject,
-    ValidityInfo, ValueDigests,
+    Certificate, DataElements, DeviceKeyInfo, DigestIds, Identifier, IdentifierListInfo,
+    KeyAuthorizations, KeyInfo, MobileSecurityObject, Status, StatusListInfo, TDate, ValidityInfo,
+    ValueDigests, URI,
 };
 pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
 pub use session_encryption::{MdocRole, SessionEncryption};
 pub use session_messages::{SessionData, SessionEstablishment};
 pub use session_transcript::{NFCHandover, SessionTranscript};
-pub use tagged_cbor_bytes::{CborAny, CborBytes, ElementValue, FullDate, TaggedCborBytes};
+pub use tagged_cbor_bytes::{
+    CborAny, CborBytes, ElementValue, FullDate, OptionalStringCborBytes, TaggedCborBytes,
+};

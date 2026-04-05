@@ -147,11 +147,11 @@ fn verify_validity_info(
     mso: &MobileSecurityObject,
     now: DateTime<Utc>,
 ) -> Result<(), IssuerDataAuthError> {
-    let valid_from = parse_rfc3339("validFrom", &mso.validity_info.valid_from)?;
-    let valid_until = parse_rfc3339("validUntil", &mso.validity_info.valid_until)?;
-    parse_rfc3339("signed", &mso.validity_info.signed)?;
+    let valid_from = parse_rfc3339("validFrom", mso.validity_info.valid_from.value())?;
+    let valid_until = parse_rfc3339("validUntil", mso.validity_info.valid_until.value())?;
+    parse_rfc3339("signed", mso.validity_info.signed.value())?;
     if let Some(expected_update) = &mso.validity_info.expected_update {
-        parse_rfc3339("expectedUpdate", expected_update)?;
+        parse_rfc3339("expectedUpdate", expected_update.value())?;
     }
 
     if valid_from > valid_until {
@@ -248,8 +248,8 @@ impl DigestLookup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minicbor::{Decode, Encode};
     use minicbor::bytes::ByteVec;
+    use minicbor::{Decode, Encode};
     use p256::ecdsa::signature::Signer;
     use p256::pkcs8::DecodePrivateKey;
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
@@ -258,7 +258,7 @@ mod tests {
     use crate::device_response::{DeviceAuth, DeviceSigned, IssuerSigned};
     use crate::{
         CborBytes, CoseAlg, CoseSign1, HeaderMap, IssuerSignedItem, MobileSecurityObject,
-        ProtectedHeaderMap, TaggedCborBytes, ValidityInfo, X5Chain,
+        ProtectedHeaderMap, TDate, TaggedCborBytes, ValidityInfo, X5Chain,
     };
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn verify_issuer_data_auth_rejects_invalid_validity_window() {
         let mut fixture = signed_document_fixture();
-        fixture.mso.validity_info.valid_until = "2026-05-01T00:00:00Z".to_string();
+        fixture.mso.validity_info.valid_until = TDate::from("2026-05-01T00:00:00Z".to_string());
         fixture.document.issuer_signed.issuer_auth =
             issuer_auth_for_mso(&fixture.mso, &fixture.cert_der, &fixture.signing_key);
 
@@ -357,9 +357,9 @@ mod tests {
             },
             doc_type: doc_type.clone(),
             validity_info: ValidityInfo {
-                signed: "2026-01-01T00:00:00Z".to_string(),
-                valid_from: "2026-01-01T00:00:00Z".to_string(),
-                valid_until: "2027-01-01T00:00:00Z".to_string(),
+                signed: TDate::from("2026-01-01T00:00:00Z".to_string()),
+                valid_from: TDate::from("2026-01-01T00:00:00Z".to_string()),
+                valid_until: TDate::from("2027-01-01T00:00:00Z".to_string()),
                 expected_update: None,
             },
             status: None,
