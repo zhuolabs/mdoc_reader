@@ -1,10 +1,11 @@
 use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Decoder, Encode, Encoder};
+use p256::ecdsa::VerifyingKey;
 use p256::ecdsa::signature::Verifier;
 use x509_cert::der::{Decode as DerDecode, Encode as DerEncode};
 
-use crate::{CborAny, CborBytes, CoseKeyPublic};
+use crate::{CborAny, CborBytes};
 
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
@@ -218,72 +219,62 @@ where
         Ok(self.unprotected.document_signer_cert())
     }
 
-    pub fn verify_signature_with_public_key(
+    pub fn verify(
         &self,
-        public_key: &CoseKeyPublic,
+        verifying_key: &VerifyingKey,
         external_aad: &[u8],
     ) -> Result<()> {
-        match self.resolved_alg()? {
-            CoseAlg::ES256 | CoseAlg::ES256P256 => {
-                let encoded_point = p256::EncodedPoint::from_affine_coordinates(
-                    public_key.x.as_slice().into(),
-                    public_key.y.as_slice().into(),
-                    false,
-                );
-                let verifying_key =
-                    p256::ecdsa::VerifyingKey::from_sec1_bytes(encoded_point.as_bytes())
-                        .map_err(|_| anyhow::anyhow!("invalid P-256 public key"))?;
-                self.verify_signature_with_verifying_key(&verifying_key, external_aad)
-            }
-            alg => anyhow::bail!("unsupported COSE algorithm for signature verification: {alg:?}"),
-        }
+        let payload = self
+            .payload
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
+        self.verify_detached_payload(
+            verifying_key,
+            external_aad,
+            payload.raw_cbor_bytes()
+        )
     }
 
-    pub fn verify_signature_with_certificate(
+    pub fn verify_with_certificate(
         &self,
         certificate: &x509_cert::Certificate,
         external_aad: &[u8],
     ) -> Result<()> {
+        let sec1_bytes = certificate
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key
+            .as_bytes()
+            .ok_or_else(|| anyhow::anyhow!("certificate public key is not byte-aligned"))?;
+        let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(sec1_bytes)
+            .map_err(|_| {
+                anyhow::anyhow!("certificate public key is not a valid P-256 key")
+            })?;
+        self.verify(&verifying_key, external_aad)
+    }
+
+    pub fn verify_detached_payload(
+        &self,
+        verifying_key: &VerifyingKey,
+        external_aad: &[u8],
+        payload: &[u8],
+    ) -> Result<()> {
         match self.resolved_alg()? {
             CoseAlg::ES256 | CoseAlg::ES256P256 => {
-                let sec1_bytes = certificate
-                    .tbs_certificate
-                    .subject_public_key_info
-                    .subject_public_key
-                    .as_bytes()
-                    .ok_or_else(|| anyhow::anyhow!("certificate public key is not byte-aligned"))?;
-                let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(sec1_bytes)
-                    .map_err(|_| {
-                        anyhow::anyhow!("certificate public key is not a valid P-256 key")
-                    })?;
-                self.verify_signature_with_verifying_key(&verifying_key, external_aad)
+                let sig_structure = minicbor::to_vec(SigStructureSignature1 {
+                    context: "Signature1".to_string(),
+                    body_protected: ByteVec::from(self.protected.raw_cbor_bytes().to_vec()),
+                    external_aad: ByteVec::from(external_aad.to_vec()),
+                    payload: ByteVec::from(payload.to_vec()),
+                })?;
+                let signature = p256::ecdsa::Signature::from_slice(self.signature.as_slice())
+                    .map_err(|_| anyhow::anyhow!("invalid ES256 signature bytes"))?;
+                verifying_key
+                    .verify(&sig_structure, &signature)
+                    .map_err(|_| anyhow::anyhow!("COSE_Sign1 signature verification failed"))
             }
             alg => anyhow::bail!("unsupported COSE algorithm for signature verification: {alg:?}"),
         }
-    }
-
-    fn verify_signature_with_verifying_key(
-        &self,
-        verifying_key: &p256::ecdsa::VerifyingKey,
-        external_aad: &[u8],
-    ) -> Result<()> {
-        let sig_structure = minicbor::to_vec(SigStructureSignature1 {
-            context: "Signature1".to_string(),
-            body_protected: ByteVec::from(self.protected.raw_cbor_bytes().to_vec()),
-            external_aad: ByteVec::from(external_aad.to_vec()),
-            payload: ByteVec::from(
-                self.payload
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?
-                    .raw_cbor_bytes()
-                    .to_vec(),
-            ),
-        })?;
-        let signature = p256::ecdsa::Signature::from_slice(self.signature.as_slice())
-            .map_err(|_| anyhow::anyhow!("invalid ES256 signature bytes"))?;
-        verifying_key
-            .verify(&sig_structure, &signature)
-            .map_err(|_| anyhow::anyhow!("COSE_Sign1 signature verification failed"))
     }
 }
 
@@ -501,10 +492,43 @@ mod tests {
                 .as_bytes(),
         )
         .unwrap();
-        let cose_key = CoseKeyPublic::try_from(&public_key).unwrap();
+        sign1
+            .verify(&(&public_key).into(), b"")
+            .unwrap();
+    }
+
+    #[test]
+    fn verify_signature_with_public_key_detached_accepts_valid_es256_signature() {
+        let signing_key = SigningKey::from_bytes((&[8u8; 32]).into()).unwrap();
+        let detached_payload = vec![0x04, 0x05, 0x06];
+        let protected = CborBytes::from(&HeaderMap {
+            alg: Some(CoseAlg::ES256),
+            x5chain: None,
+        });
+        let sig_structure = minicbor::to_vec(SigStructureSignature1 {
+            context: "Signature1".to_string(),
+            body_protected: ByteVec::from(protected.raw_cbor_bytes().to_vec()),
+            external_aad: ByteVec::from(Vec::<u8>::new()),
+            payload: ByteVec::from(detached_payload.clone()),
+        })
+        .unwrap();
+        let signature: p256::ecdsa::Signature = signing_key.sign(&sig_structure);
+        let sign1 = CoseSign1::<CborAny> {
+            protected,
+            unprotected: HeaderMap::default(),
+            payload: None,
+            signature: ByteVec::from(signature.to_bytes().to_vec()),
+        };
+        let public_key = p256::PublicKey::from_sec1_bytes(
+            signing_key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes(),
+        )
+        .unwrap();
 
         sign1
-            .verify_signature_with_public_key(&cose_key, b"")
+            .verify_detached_payload(&(&public_key).into(), b"", &detached_payload)
             .unwrap();
     }
 }

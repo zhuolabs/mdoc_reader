@@ -1,5 +1,6 @@
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
+use p256::ecdsa::VerifyingKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::EncodedPoint;
 use p256::{PublicKey, SecretKey};
@@ -94,6 +95,15 @@ impl TryFrom<&CoseKeyPublic> for PublicKey {
         );
         PublicKey::from_sec1_bytes(encoded_point.as_bytes())
             .map_err(|e| anyhow::anyhow!("invalid P-256 public key: {}", e))
+    }
+}
+
+impl TryFrom<&CoseKeyPublic> for VerifyingKey {
+    type Error = anyhow::Error;
+
+    fn try_from(key: &CoseKeyPublic) -> Result<Self, Self::Error> {
+        let public_key = PublicKey::try_from(key)?;
+        Ok(VerifyingKey::from(public_key))
     }
 }
 

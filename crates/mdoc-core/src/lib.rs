@@ -7,6 +7,7 @@ mod device_request;
 mod device_response;
 mod ident;
 mod issuer_data_auth;
+mod mdoc_device_auth;
 mod mobile_security_object;
 mod reader_engagement;
 mod session_encryption;
@@ -33,6 +34,9 @@ pub use device_response::{
 pub use ident::ble_ident;
 pub use issuer_data_auth::{
     verify_issuer_data_auth, IssuerDataAuthContext, IssuerDataAuthError, VerifiedMso,
+};
+pub use mdoc_device_auth::{
+    verify_mdoc_device_auth, MdocDeviceAuthContext, MdocDeviceAuthError,
 };
 pub use mobile_security_object::{
     Certificate, DataElements, DeviceKeyInfo, DigestIds, Identifier, IdentifierListInfo,

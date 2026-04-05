@@ -24,6 +24,7 @@ const SESSION_DATA_STATUS_SESSION_TERMINATION: u64 = 20;
 #[derive(Debug, Clone)]
 pub struct ReadMdocResult {
     pub device_response: DeviceResponse,
+    pub session_transcript: TaggedCborBytes<SessionTranscript>,
 }
 
 pub async fn read_mdoc<T, F>(
@@ -174,7 +175,10 @@ where
         transport.send(&termination).await?;
     }
 
-    Ok(ReadMdocResult { device_response })
+    Ok(ReadMdocResult {
+        device_response,
+        session_transcript: session_transcript.clone(),
+    })
 }
 
 fn notify_event(observer: Option<&dyn ReaderFlowObserver>, event: ReaderFlowEvent) {

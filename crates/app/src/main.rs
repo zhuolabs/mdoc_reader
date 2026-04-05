@@ -2,7 +2,10 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use clap::Parser;
 use log::info;
-use mdoc_core::{DeviceRequest, DeviceResponse, IssuerDataAuthContext, NameSpaces, VerifiedMso};
+use mdoc_core::{
+    DeviceRequest, DeviceResponse, IssuerDataAuthContext, MdocDeviceAuthContext, NameSpaces,
+    SessionTranscript, TaggedCborBytes, VerifiedMso,
+};
 use mdoc_reader_flow_nfc_ble::read_mdoc;
 use mdoc_reader_transport_ble_winrt::WinRtBleReaderTransportFactory;
 use mdoc_ui_cli::{render_device_response, ConsoleReaderFlowObserver};
@@ -37,6 +40,7 @@ struct DocumentValidation {
     doc_type: String,
     cose_sign1: Result<(), String>,
     issuer_data_auth: Result<VerifiedMso, String>,
+    mdoc_device_auth: Result<(), String>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -63,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let validation = validate_device_response(&result.device_response);
+    let validation = validate_device_response(&result.device_response, &result.session_transcript);
     print_validation_summary(&validation);
     render_device_response(&result.device_response)
 }
@@ -127,7 +131,10 @@ fn build_namespaces_from_json(items_request: &Value, idx: usize) -> anyhow::Resu
     })
 }
 
-fn validate_device_response(response: &DeviceResponse) -> DeviceResponseValidation {
+fn validate_device_response(
+    response: &DeviceResponse,
+    session_transcript: &TaggedCborBytes<SessionTranscript>,
+) -> DeviceResponseValidation {
     let documents = response
         .documents
         .as_ref()
@@ -152,7 +159,7 @@ fn validate_device_response(response: &DeviceResponse) -> DeviceResponseValidati
                         |cert| {
                             doc.issuer_signed
                                 .issuer_auth
-                                .verify_signature_with_certificate(cert, b"")
+                                .verify_with_certificate(cert, b"")
                                 .map_err(|err| err.to_string())
                         },
                     );
@@ -163,13 +170,25 @@ fn validate_device_response(response: &DeviceResponse) -> DeviceResponseValidati
                             now: Utc::now(),
                             expected_doc_type: Some(doc.doc_type.clone()),
                         },
-                    )
-                    .map_err(|err| err.to_string());
+                    );
+                    let mdoc_device_auth = match &issuer_data_auth {
+                        Ok(verified_mso) => mdoc_core::verify_mdoc_device_auth(
+                            doc,
+                            &MdocDeviceAuthContext {
+                                session_transcript: session_transcript.clone(),
+                                verified_mso: verified_mso.clone(),
+                            },
+                        )
+                        .map_err(|err| err.to_string()),
+                        Err(err) => Err(err.to_string()),
+                    };
+                    let issuer_data_auth = issuer_data_auth.map_err(|err| err.to_string());
 
                     DocumentValidation {
                         doc_type: doc.doc_type.clone(),
                         cose_sign1,
                         issuer_data_auth,
+                        mdoc_device_auth,
                     }
                 })
                 .collect()
@@ -204,6 +223,17 @@ fn print_validation_summary(validation: &DeviceResponseValidation) {
             ),
             Err(err) => println!(
                 "[ERR] Document[{idx}] issuer_data_auth verification failed docType={} error={err}",
+                doc.doc_type
+            ),
+        }
+
+        match &doc.mdoc_device_auth {
+            Ok(()) => println!(
+                "[OK] Document[{idx}] mdoc_device_auth verified docType={}",
+                doc.doc_type
+            ),
+            Err(err) => println!(
+                "[ERR] Document[{idx}] mdoc_device_auth verification failed docType={} error={err}",
                 doc.doc_type
             ),
         }

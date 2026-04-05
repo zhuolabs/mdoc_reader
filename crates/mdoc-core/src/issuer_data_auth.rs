@@ -115,7 +115,7 @@ pub fn verify_issuer_data_auth(
         .ok_or(IssuerDataAuthError::MissingIssuerCertificate)?;
 
     issuer_auth
-        .verify_signature_with_certificate(&issuer_cert, b"")
+        .verify_with_certificate(&issuer_cert, b"")
         .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?;
 
     verify_doc_type(&mso.doc_type, &doc.doc_type)?;
