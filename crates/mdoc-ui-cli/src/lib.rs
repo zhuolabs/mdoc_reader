@@ -5,7 +5,6 @@ use image::{DynamicImage, ImageFormat};
 use log::debug;
 use mdoc_core::{CborBytes, DeviceResponse, ElementValue, FullDate, MobileSecurityObject, Status};
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, TransportKind};
-use mdoc_reader_flow_nfc_ble::DeviceResponseValidation;
 use mdoc_ui::{FlowEventUi, MdocResultUi};
 use minicbor::bytes::ByteVec;
 use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
@@ -31,21 +30,6 @@ impl MdocResultUi<()> for ConsoleMdocUi {
 
     fn render_result(&mut self, response: &DeviceResponse, _validation: &()) -> Result<()> {
         render_response_summary(response);
-        print_issuer_signed_data(response)?;
-        Ok(())
-    }
-}
-
-impl MdocResultUi<DeviceResponseValidation> for ConsoleMdocUi {
-    type Error = anyhow::Error;
-
-    fn render_result(
-        &mut self,
-        response: &DeviceResponse,
-        validation: &DeviceResponseValidation,
-    ) -> Result<()> {
-        render_response_summary(response);
-        print_validation_summary(validation);
         print_issuer_signed_data(response)?;
         Ok(())
     }
@@ -101,12 +85,9 @@ fn format_transport_kind(kind: TransportKind) -> &'static str {
     }
 }
 
-pub fn render_device_response(
-    response: &DeviceResponse,
-    validation: &DeviceResponseValidation,
-) -> Result<()> {
+pub fn render_device_response(response: &DeviceResponse) -> Result<()> {
     let mut ui = ConsoleMdocUi;
-    ui.render_result(response, validation)
+    ui.render_result(response, &())
 }
 
 fn render_response_summary(response: &DeviceResponse) {
@@ -117,36 +98,6 @@ fn render_response_summary(response: &DeviceResponse) {
     );
 }
 
-fn print_validation_summary(validation: &DeviceResponseValidation) {
-    if validation.documents.is_empty() {
-        println!("[INFO] Validation skipped: no documents");
-        return;
-    }
-
-    for (idx, doc) in validation.documents.iter().enumerate() {
-        match &doc.cose_sign1 {
-            Ok(()) => println!(
-                "[OK] Document[{idx}] COSE_Sign1 verified docType={}",
-                doc.doc_type
-            ),
-            Err(err) => println!(
-                "[ERR] Document[{idx}] COSE_Sign1 verification failed docType={} error={err}",
-                doc.doc_type
-            ),
-        }
-
-        match &doc.issuer_data_auth {
-            Ok(verified) => println!(
-                "[OK] Document[{idx}] issuer_data_auth verified docType={} mso.docType={}",
-                doc.doc_type, verified.mso.doc_type
-            ),
-            Err(err) => println!(
-                "[ERR] Document[{idx}] issuer_data_auth verification failed docType={} error={err}",
-                doc.doc_type
-            ),
-        }
-    }
-}
 
 pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
     let bytes = portrait

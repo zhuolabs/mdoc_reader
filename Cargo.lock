@@ -1433,7 +1433,6 @@ name = "mdoc-reader-flow-nfc-ble"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
  "connection-handover",
  "log",
  "mdoc-core",
@@ -1497,6 +1496,7 @@ name = "mdoc_reader"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "env_logger",
  "log",

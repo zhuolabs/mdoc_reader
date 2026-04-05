@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context};
+use chrono::Utc;
 use clap::Parser;
 use log::info;
-use mdoc_core::{DeviceRequest, NameSpaces};
+use mdoc_core::{DeviceRequest, DeviceResponse, IssuerDataAuthContext, NameSpaces, VerifiedMso};
 use mdoc_reader_flow_nfc_ble::read_mdoc;
 use mdoc_reader_transport_ble_winrt::WinRtBleReaderTransportFactory;
 use mdoc_ui_cli::{render_device_response, ConsoleReaderFlowObserver};
@@ -24,6 +25,18 @@ struct Cli {
 
     #[arg(long, value_name = "UUID", help = "BLE service UUID")]
     service_uuid: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct DeviceResponseValidation {
+    documents: Vec<DocumentValidation>,
+}
+
+#[derive(Debug, Clone)]
+struct DocumentValidation {
+    doc_type: String,
+    cose_sign1: Result<(), String>,
+    issuer_data_auth: Result<VerifiedMso, String>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -50,7 +63,9 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    render_device_response(&result.device_response, &result.validation)
+    let validation = validate_device_response(&result.device_response);
+    print_validation_summary(&validation);
+    render_device_response(&result.device_response)
 }
 
 fn load_config_json(cli: &Cli) -> anyhow::Result<Value> {
@@ -110,4 +125,87 @@ fn build_namespaces_from_json(items_request: &Value, idx: usize) -> anyhow::Resu
             idx
         )
     })
+}
+
+fn validate_device_response(response: &DeviceResponse) -> DeviceResponseValidation {
+    let documents = response
+        .documents
+        .as_ref()
+        .map(|documents| {
+            documents
+                .iter()
+                .map(|doc| {
+                    let issuer_cert = doc
+                        .issuer_signed
+                        .issuer_auth
+                        .resolved_document_signer_cert()
+                        .map_err(|err| err.to_string())
+                        .and_then(|cert| {
+                            cert.cloned().ok_or_else(|| {
+                                "issuerAuth did not contain a document signer certificate"
+                                    .to_string()
+                            })
+                        });
+
+                    let cose_sign1 = issuer_cert.as_ref().map_or_else(
+                        |err| Err(err.clone()),
+                        |cert| {
+                            doc.issuer_signed
+                                .issuer_auth
+                                .verify_signature_with_certificate(cert, b"")
+                                .map_err(|err| err.to_string())
+                        },
+                    );
+
+                    let issuer_data_auth = mdoc_core::verify_issuer_data_auth(
+                        doc,
+                        &IssuerDataAuthContext {
+                            now: Utc::now(),
+                            expected_doc_type: Some(doc.doc_type.clone()),
+                        },
+                    )
+                    .map_err(|err| err.to_string());
+
+                    DocumentValidation {
+                        doc_type: doc.doc_type.clone(),
+                        cose_sign1,
+                        issuer_data_auth,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    DeviceResponseValidation { documents }
+}
+
+fn print_validation_summary(validation: &DeviceResponseValidation) {
+    if validation.documents.is_empty() {
+        println!("[INFO] Validation skipped: no documents");
+        return;
+    }
+
+    for (idx, doc) in validation.documents.iter().enumerate() {
+        match &doc.cose_sign1 {
+            Ok(()) => println!(
+                "[OK] Document[{idx}] COSE_Sign1 verified docType={}",
+                doc.doc_type
+            ),
+            Err(err) => println!(
+                "[ERR] Document[{idx}] COSE_Sign1 verification failed docType={} error={err}",
+                doc.doc_type
+            ),
+        }
+
+        match &doc.issuer_data_auth {
+            Ok(verified) => println!(
+                "[OK] Document[{idx}] issuer_data_auth verified docType={} mso.docType={}",
+                doc.doc_type, verified.mso.doc_type
+            ),
+            Err(err) => println!(
+                "[ERR] Document[{idx}] issuer_data_auth verification failed docType={} error={err}",
+                doc.doc_type
+            ),
+        }
+    }
 }
