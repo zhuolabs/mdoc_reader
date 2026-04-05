@@ -5,6 +5,7 @@ mod device_engagement;
 mod device_request;
 mod device_response;
 mod ident;
+mod issuer_data_auth;
 mod mobile_security_object;
 mod reader_engagement;
 mod session_encryption;
@@ -30,6 +31,9 @@ pub use device_response::{
     DEVICE_RESPONSE_STATUS_OK,
 };
 pub use ident::ble_ident;
+pub use issuer_data_auth::{
+    verify_issuer_data_auth, IssuerDataAuthContext, IssuerDataAuthError, VerifiedMso,
+};
 pub use mobile_security_object::{
     DataElements, DeviceKeyInfo, DigestIds, KeyAuthorizations, KeyInfo, MobileSecurityObject,
     ValidityInfo, ValueDigests,
@@ -38,4 +42,4 @@ pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
 pub use session_encryption::{MdocRole, SessionEncryption};
 pub use session_messages::{SessionData, SessionEstablishment};
 pub use session_transcript::{NFCHandover, SessionTranscript};
-pub use tagged_cbor_bytes::{CborAny, CborBytes, ElementValue, TaggedCborBytes, FullDate};
+pub use tagged_cbor_bytes::{CborAny, CborBytes, ElementValue, FullDate, TaggedCborBytes};
