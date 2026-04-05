@@ -3,10 +3,11 @@ use chrono::NaiveDate;
 use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
 use log::debug;
-use mdoc_core::{CborBytes, DeviceResponse, ElementValue, FullDate};
-use minicbor::bytes::ByteVec;
+use mdoc_core::{CborBytes, DeviceResponse, ElementValue, FullDate, MobileSecurityObject, Status};
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, TransportKind};
+use mdoc_reader_flow_nfc_ble::DeviceResponseValidation;
 use mdoc_ui::{FlowEventUi, MdocResultUi};
+use minicbor::bytes::ByteVec;
 use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
 use x509_cert::ext::pkix::{CrlDistributionPoints, IssuerAltName};
 
@@ -30,6 +31,21 @@ impl MdocResultUi<()> for ConsoleMdocUi {
 
     fn render_result(&mut self, response: &DeviceResponse, _validation: &()) -> Result<()> {
         render_response_summary(response);
+        print_issuer_signed_data(response)?;
+        Ok(())
+    }
+}
+
+impl MdocResultUi<DeviceResponseValidation> for ConsoleMdocUi {
+    type Error = anyhow::Error;
+
+    fn render_result(
+        &mut self,
+        response: &DeviceResponse,
+        validation: &DeviceResponseValidation,
+    ) -> Result<()> {
+        render_response_summary(response);
+        print_validation_summary(validation);
         print_issuer_signed_data(response)?;
         Ok(())
     }
@@ -85,9 +101,12 @@ fn format_transport_kind(kind: TransportKind) -> &'static str {
     }
 }
 
-pub fn render_device_response(response: &DeviceResponse) -> Result<()> {
+pub fn render_device_response(
+    response: &DeviceResponse,
+    validation: &DeviceResponseValidation,
+) -> Result<()> {
     let mut ui = ConsoleMdocUi;
-    ui.render_result(response, &())
+    ui.render_result(response, validation)
 }
 
 fn render_response_summary(response: &DeviceResponse) {
@@ -96,6 +115,37 @@ fn render_response_summary(response: &DeviceResponse) {
         response.status,
         response.documents.as_ref().map_or(0, Vec::len)
     );
+}
+
+fn print_validation_summary(validation: &DeviceResponseValidation) {
+    if validation.documents.is_empty() {
+        println!("[INFO] Validation skipped: no documents");
+        return;
+    }
+
+    for (idx, doc) in validation.documents.iter().enumerate() {
+        match &doc.cose_sign1 {
+            Ok(()) => println!(
+                "[OK] Document[{idx}] COSE_Sign1 verified docType={}",
+                doc.doc_type
+            ),
+            Err(err) => println!(
+                "[ERR] Document[{idx}] COSE_Sign1 verification failed docType={} error={err}",
+                doc.doc_type
+            ),
+        }
+
+        match &doc.issuer_data_auth {
+            Ok(verified) => println!(
+                "[OK] Document[{idx}] issuer_data_auth verified docType={} mso.docType={}",
+                doc.doc_type, verified.mso.doc_type
+            ),
+            Err(err) => println!(
+                "[ERR] Document[{idx}] issuer_data_auth verification failed docType={} error={err}",
+                doc.doc_type
+            ),
+        }
+    }
 }
 
 pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
@@ -168,6 +218,7 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
                 .as_ref()
                 .map(CborBytes::raw_cbor_bytes),
         );
+        print_mso_status(doc)?;
         if let Some(x5chain) = &doc.issuer_signed.issuer_auth.unprotected.x5chain {
             println!("[INFO]   issuerAuth.x5chain certs={}", x5chain.len());
 
@@ -217,6 +268,61 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_mso_status(doc: &mdoc_core::MdocDocument) -> Result<()> {
+    let mso_bytes = doc
+        .issuer_signed
+        .issuer_auth
+        .decode_payload_cbor()
+        .context("failed to decode issuerAuth payload as tagged MobileSecurityObject bytes")?;
+    let mso: MobileSecurityObject = mso_bytes
+        .decode()
+        .context("failed to decode MobileSecurityObject from issuerAuth payload")?;
+
+    match &mso.status {
+        Some(status) => log_status(status),
+        None => debug!("mso.status=none"),
+    }
+
+    Ok(())
+}
+
+fn log_status(status: &Status) {
+    debug!("mso.status=present");
+
+    match &status.identifier_list {
+        Some(identifier_list) => {
+            debug!(
+                "mso.status.identifier_list.id={}",
+                encode_hex(identifier_list.id.as_slice())
+            );
+            debug!("mso.status.identifier_list.uri={}", identifier_list.uri);
+            match &identifier_list.certificate {
+                Some(certificate) => debug!(
+                    "mso.status.identifier_list.certificate=bytes(len={})",
+                    certificate.len()
+                ),
+                None => debug!("mso.status.identifier_list.certificate=none"),
+            }
+        }
+        None => debug!("mso.status.identifier_list=none"),
+    }
+
+    match &status.status_list {
+        Some(status_list) => {
+            debug!("mso.status.status_list.idx={}", status_list.idx);
+            debug!("mso.status.status_list.uri={}", status_list.uri);
+            match &status_list.certificate {
+                Some(certificate) => debug!(
+                    "mso.status.status_list.certificate=bytes(len={})",
+                    certificate.len()
+                ),
+                None => debug!("mso.status.status_list.certificate=none"),
+            }
+        }
+        None => debug!("mso.status.status_list=none"),
+    }
 }
 
 fn log_issuer_auth_payload(doc_idx: usize, payload: Option<&[u8]>) {

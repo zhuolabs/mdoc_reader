@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use connection_handover::{
     BleAdStructure, BleLeRole, BleOobRecord, HandoverRequest, HandoverSelect,
     CONNECTION_HANDOVER_SERVICE_NAME,
 };
 use log::warn;
 use mdoc_core::{
-    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest,
-    DeviceResponse, MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption,
-    SessionEstablishment, SessionTranscript, TaggedCborBytes,
+    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
+    IssuerDataAuthContext, MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption,
+    SessionEstablishment, SessionTranscript, TaggedCborBytes, VerifiedMso,
 };
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, ReaderFlowObserver, TransportKind};
 use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
@@ -21,13 +22,31 @@ mod packet_reorder_workaround;
 
 const SESSION_DATA_STATUS_SESSION_TERMINATION: u64 = 20;
 
+#[derive(Debug, Clone)]
+pub struct ReadMdocResult {
+    pub device_response: DeviceResponse,
+    pub validation: DeviceResponseValidation,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DeviceResponseValidation {
+    pub documents: Vec<DocumentValidation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentValidation {
+    pub doc_type: String,
+    pub cose_sign1: Result<(), String>,
+    pub issuer_data_auth: Result<VerifiedMso, String>,
+}
+
 pub async fn read_mdoc<T, F>(
     reader: &mut T,
     transport_factory: &F,
     device_request: &DeviceRequest,
     service_uuid: Option<Uuid>,
     observer: Option<&dyn ReaderFlowObserver>,
-) -> Result<DeviceResponse>
+) -> Result<ReadMdocResult>
 where
     T: NfcReader + ?Sized,
     F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
@@ -129,7 +148,7 @@ async fn do_reader_flow_with_transport<T>(
     e_reader_key_private: &CoseKeyPrivate,
     device_request: &DeviceRequest,
     observer: Option<&dyn ReaderFlowObserver>,
-) -> Result<DeviceResponse>
+) -> Result<ReadMdocResult>
 where
     T: ReaderTransport + ?Sized,
 {
@@ -170,7 +189,12 @@ where
         transport.send(&termination).await?;
     }
 
-    Ok(device_response)
+    let validation = validate_device_response(&device_response);
+
+    Ok(ReadMdocResult {
+        device_response,
+        validation,
+    })
 }
 
 fn notify_event(observer: Option<&dyn ReaderFlowObserver>, event: ReaderFlowEvent) {
@@ -269,4 +293,56 @@ fn join_packets(packets: &[Vec<u8>]) -> Vec<u8> {
         joined.extend_from_slice(packet);
     }
     joined
+}
+
+fn validate_device_response(response: &DeviceResponse) -> DeviceResponseValidation {
+    let documents = response
+        .documents
+        .as_ref()
+        .map(|documents| {
+            documents
+                .iter()
+                .map(|doc| {
+                    let issuer_cert = doc
+                        .issuer_signed
+                        .issuer_auth
+                        .resolved_document_signer_cert()
+                        .map_err(|err| err.to_string())
+                        .and_then(|cert| {
+                            cert.cloned().ok_or_else(|| {
+                                "issuerAuth did not contain a document signer certificate"
+                                    .to_string()
+                            })
+                        });
+
+                    let cose_sign1 = issuer_cert.as_ref().map_or_else(
+                        |err| Err(err.clone()),
+                        |cert| {
+                            doc.issuer_signed
+                                .issuer_auth
+                                .verify_signature_with_certificate(cert, b"")
+                                .map_err(|err| err.to_string())
+                        },
+                    );
+
+                    let issuer_data_auth = mdoc_core::verify_issuer_data_auth(
+                        doc,
+                        &IssuerDataAuthContext {
+                            now: Utc::now(),
+                            expected_doc_type: Some(doc.doc_type.clone()),
+                        },
+                    )
+                    .map_err(|err| err.to_string());
+
+                    DocumentValidation {
+                        doc_type: doc.doc_type.clone(),
+                        cose_sign1,
+                        issuer_data_auth,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    DeviceResponseValidation { documents }
 }
