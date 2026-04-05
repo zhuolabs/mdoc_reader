@@ -5,13 +5,12 @@ use connection_handover::{
 };
 use log::warn;
 use mdoc_core::{
-    ble_ident, CoseKeyPrivate, DeviceEngagement, DeviceRequest, DeviceResponse, MdocRole,
-    NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
+    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
+    MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
     SessionTranscript, TaggedCborBytes,
 };
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, ReaderFlowObserver, TransportKind};
 use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
-use minicbor::bytes::ByteVec;
 use nfc_reader::NfcReader;
 use packet_reorder_workaround::{one_swap_reordered_packets, two_inversion_reordered_packets};
 use std::convert::TryFrom;
@@ -89,12 +88,12 @@ where
         })?;
 
     let e_device_key = device_engagement.e_device_key();
-    let ident = ble_ident(&e_device_key)?;
+    let ident = ble_ident(e_device_key)?;
     let e_reader_key_private = CoseKeyPrivate::new()?;
     let e_reader_key = e_reader_key_private.to_public();
     let session_transcript = SessionTranscript(
-        Some(device_engagement.into()),
-        e_reader_key.into(),
+        Some((&device_engagement).into()),
+        (&e_reader_key).into(),
         NFCHandover(
             (&handover_select_message).try_into()?,
             Some((&handover_request_message).try_into()?),
@@ -114,7 +113,7 @@ where
 
     do_reader_flow_with_transport(
         &mut transport,
-        &e_device_key,
+        e_device_key,
         &session_transcript,
         &e_reader_key_private,
         device_request,
@@ -125,7 +124,7 @@ where
 
 async fn do_reader_flow_with_transport<T>(
     transport: &mut T,
-    e_device_key_cose: &mdoc_core::CoseKeyPublic,
+    e_device_key_cose_bytes: &TaggedCborBytes<CoseKeyPublic>,
     session_transcript: &SessionTranscript,
     e_reader_key_private: &CoseKeyPrivate,
     device_request: &DeviceRequest,
@@ -135,19 +134,20 @@ where
     T: ReaderTransport + ?Sized,
 {
     let e_reader_key_public = e_reader_key_private.to_public();
+    let e_device_key = e_device_key_cose_bytes.decode()?;
     let encoded_device_request = minicbor::to_vec(device_request)?;
     let session_encryption = SessionEncryption::new(
         MdocRole::Reader,
         e_reader_key_private,
-        e_device_key_cose,
+        &e_device_key,
         session_transcript,
     )?;
     let encrypt_counter = 1u32;
     let encrypted_request =
         session_encryption.encrypt_data(&encoded_device_request, encrypt_counter)?;
     let session_establishment = SessionEstablishment {
-        e_reader_key: TaggedCborBytes(e_reader_key_public.clone()),
-        data: ByteVec::from(encrypted_request),
+        e_reader_key: (&e_reader_key_public).into(),
+        data: encrypted_request.into(),
     };
     let encoded_session_establishment = minicbor::to_vec(session_establishment)?;
     transport.send(&encoded_session_establishment).await?;

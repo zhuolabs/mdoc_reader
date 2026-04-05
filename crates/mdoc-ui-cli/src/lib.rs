@@ -191,14 +191,15 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
         for (ns, items) in name_spaces {
             println!("[INFO]   nameSpace={ns}");
             for item in items {
+                let item = item.decode()?;
                 println!(
                     "[INFO]     {} = {}",
-                    item.0.element_identifier,
-                    format_element_value(&item.0.element_value)
+                    item.element_identifier,
+                    format_element_value(&item.element_value)
                 );
 
-                if item.0.element_identifier == "portrait" {
-                    render_portrait(&item.0.element_value)?;
+                if item.element_identifier == "portrait" {
+                    render_portrait(&item.element_value)?;
                 }
             }
         }
