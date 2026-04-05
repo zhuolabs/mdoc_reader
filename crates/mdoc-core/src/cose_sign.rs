@@ -16,7 +16,6 @@ pub struct CoseSign1 {
     pub signature: ByteVec,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Decode, Encode)]
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
 pub struct SigStructureSignature1 {
