@@ -174,6 +174,7 @@ where
 }
 
 pub type ElementValue = CborAny;
+pub type FullDate = Tagged<1004, String>;
 
 #[cfg(test)]
 mod tests {

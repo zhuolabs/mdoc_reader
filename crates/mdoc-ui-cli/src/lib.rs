@@ -3,9 +3,8 @@ use chrono::NaiveDate;
 use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
 use log::debug;
-use mdoc_core::{DeviceResponse, ElementValue};
+use mdoc_core::{CborBytes, DeviceResponse, ElementValue, FullDate};
 use minicbor::bytes::ByteVec;
-use minicbor::data::Tagged;
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, TransportKind};
 use mdoc_ui::{FlowEventUi, MdocResultUi};
 use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
@@ -166,8 +165,8 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
             doc.issuer_signed
                 .issuer_auth
                 .payload
-                .as_deref()
-                .map(|payload| payload.as_slice()),
+                .as_ref()
+                .map(CborBytes::raw_cbor_bytes),
         );
         if let Some(x5chain) = &doc.issuer_signed.issuer_auth.unprotected.x5chain {
             println!("[INFO]   issuerAuth.x5chain certs={}", x5chain.len());
@@ -249,7 +248,7 @@ fn format_element_value(value: &ElementValue) -> String {
     if let Ok(v) = value.decode::<String>() {
         return format!("str({v})");
     }
-    if let Ok(v) = value.decode::<Tagged<1004, String>>() {
+    if let Ok(v) = value.decode::<FullDate>() {
         if let Ok(date) = NaiveDate::parse_from_str(v.value(), "%Y-%m-%d") {
             return format!("full-date({})", date.format("%Y-%m-%d"));
         }

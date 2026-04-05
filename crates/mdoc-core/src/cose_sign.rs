@@ -3,15 +3,20 @@ use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Decoder, Encode, Encoder};
 use x509_cert::der::{Decode as DerDecode, Encode as DerEncode};
 
+use crate::{CborAny, CborBytes};
+
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
-pub struct CoseSign1 {
+pub struct CoseSign1<T = CborAny>
+where
+    T: Encode<()> + for<'a> Decode<'a, ()>,
+{
     #[n(0)]
     pub protected: ProtectedHeaderMap,
     #[n(1)]
     pub unprotected: HeaderMap,
     #[n(2)]
-    pub payload: Option<ByteVec>,
+    pub payload: Option<CborBytes<T>>,
     #[n(3)]
     pub signature: ByteVec,
 }
@@ -229,8 +234,11 @@ impl<'b, C> Decode<'b, C> for ProtectedHeaderMap {
     }
 }
 
-impl CoseSign1 {
-    pub fn decode_payload_cbor<T>(&self) -> Result<T>
+impl<T> CoseSign1<T>
+where
+    T: Encode<()> + for<'a> Decode<'a, ()>,
+{
+    pub fn decode_payload_cbor(&self) -> Result<T>
     where
         for<'a> T: Decode<'a, ()>,
     {
@@ -238,8 +246,7 @@ impl CoseSign1 {
             .payload
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
-        let decoded = minicbor::decode(payload.as_slice())?;
-        Ok(decoded)
+        Ok(payload.decode()?)
     }
 
     pub fn build_sig_structure_signature1(&self, external_aad: &[u8]) -> Result<Vec<u8>> {
@@ -247,7 +254,7 @@ impl CoseSign1 {
             .payload
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
-        build_sig_structure_signature1(&self.protected, external_aad, payload)
+        build_sig_structure_signature1(&self.protected, external_aad, payload.raw_cbor_bytes())
     }
 }
 
@@ -332,27 +339,27 @@ mod tests {
 
     #[test]
     fn decode_payload_cbor_decodes_payload() {
-        let sign1 = CoseSign1 {
+        let sign1 = CoseSign1::<String> {
             protected: ProtectedHeaderMap(None),
             unprotected: HeaderMap::default(),
-            payload: Some(ByteVec::from(minicbor::to_vec("hello").unwrap())),
+            payload: Some(CborBytes::from(&"hello".to_string())),
             signature: ByteVec::from(vec![0; 64]),
         };
 
-        let payload: String = sign1.decode_payload_cbor().unwrap();
+        let payload = sign1.decode_payload_cbor().unwrap();
         assert_eq!(payload, "hello");
     }
 
     #[test]
     fn decode_payload_cbor_rejects_missing_payload() {
-        let sign1 = CoseSign1 {
+        let sign1 = CoseSign1::<String> {
             protected: ProtectedHeaderMap(None),
             unprotected: HeaderMap::default(),
             payload: None,
             signature: ByteVec::from(vec![0; 64]),
         };
 
-        let result = sign1.decode_payload_cbor::<String>();
+        let result = sign1.decode_payload_cbor();
         assert!(result.is_err());
     }
 
@@ -391,10 +398,10 @@ mod tests {
 
     #[test]
     fn cose_sign1_build_sig_structure_signature1_uses_payload() {
-        let sign1 = CoseSign1 {
+        let sign1 = CoseSign1::<CborAny> {
             protected: ProtectedHeaderMap(None),
             unprotected: HeaderMap::default(),
-            payload: Some(ByteVec::from(vec![0x01, 0x02])),
+            payload: Some(CborBytes::from_raw_bytes(vec![0x01, 0x02])),
             signature: ByteVec::from(vec![0; 64]),
         };
         let encoded = sign1.build_sig_structure_signature1(b"").unwrap();

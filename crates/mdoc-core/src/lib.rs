@@ -38,4 +38,4 @@ pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
 pub use session_encryption::{MdocRole, SessionEncryption};
 pub use session_messages::{SessionData, SessionEstablishment};
 pub use session_transcript::{NFCHandover, SessionTranscript};
-pub use tagged_cbor_bytes::{CborAny, CborBytes, ElementValue, TaggedCborBytes};
+pub use tagged_cbor_bytes::{CborAny, CborBytes, ElementValue, TaggedCborBytes, FullDate};

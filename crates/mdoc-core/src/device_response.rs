@@ -1,5 +1,5 @@
 use crate::cbor_string_map_struct::cbor_string_map_struct;
-use crate::{CoseSign1, ElementValue, TaggedCborBytes};
+use crate::{CoseSign1, ElementValue, MobileSecurityObject, TaggedCborBytes};
 use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use std::collections::BTreeMap;
@@ -48,7 +48,7 @@ cbor_string_map_struct! {
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct IssuerSigned {
         required {
-            pub issuer_auth: CoseSign1 => "issuerAuth",
+            pub issuer_auth: CoseSign1<TaggedCborBytes<MobileSecurityObject>> => "issuerAuth",
         }
         optional {
             pub name_spaces: IssuerNameSpaces => "nameSpaces",
@@ -137,7 +137,7 @@ mod tests {
                 device_signed: DeviceSigned {
                     name_spaces: TaggedCborBytes::from(&BTreeMap::new()),
                     device_auth: DeviceAuth {
-                        device_signature: Some(dummy_cose_sign1()),
+                        device_signature: Some(dummy_untyped_cose_sign1()),
                         device_mac: None,
                     },
                 },
@@ -191,7 +191,16 @@ mod tests {
         })
     }
 
-    fn dummy_cose_sign1() -> CoseSign1 {
+    fn dummy_cose_sign1() -> CoseSign1<TaggedCborBytes<MobileSecurityObject>> {
+        CoseSign1 {
+            protected: crate::ProtectedHeaderMap(None),
+            unprotected: crate::HeaderMap::default(),
+            payload: None,
+            signature: ByteVec::from(vec![0u8; 64]),
+        }
+    }
+
+    fn dummy_untyped_cose_sign1() -> CoseSign1 {
         CoseSign1 {
             protected: crate::ProtectedHeaderMap(None),
             unprotected: crate::HeaderMap::default(),
