@@ -1,4 +1,48 @@
+use anyhow::Result;
+use log::warn;
 use std::collections::HashSet;
+
+pub(crate) fn try_decode_and_decrypt_session_data<T, F>(packets: &[Vec<u8>], decode: F) -> Result<T>
+where
+    F: Fn(&[u8]) -> Result<T>,
+{
+    let joined = join_packets(packets);
+    if let Ok(message) = decode(&joined) {
+        return Ok(message);
+    }
+
+    let packet_len = packets.len();
+    if packet_len < 2 {
+        return decode(&joined);
+    }
+
+    for (swap_at, swapped) in one_swap_reordered_packets(packets) {
+        let candidate = join_packets(&swapped);
+        if let Ok(message) = decode(&candidate) {
+            warn!(
+                "session data recovered by swapping packet {} and {}",
+                swap_at,
+                swap_at + 1
+            );
+            return Ok(message);
+        }
+    }
+
+    if packet_len >= 3 {
+        for (permutation, reordered) in two_inversion_reordered_packets(packets) {
+            let candidate = join_packets(&reordered);
+            if let Ok(message) = decode(&candidate) {
+                warn!(
+                    "session data recovered by inversion-2 permutation {:?}",
+                    permutation
+                );
+                return Ok(message);
+            }
+        }
+    }
+
+    decode(&joined)
+}
 
 pub(crate) fn one_swap_reordered_packets<T: Clone>(packets: &[T]) -> Vec<(usize, Vec<T>)> {
     let mut candidates = Vec::new();
@@ -78,9 +122,21 @@ fn two_inversion_permutations(packet_len: usize) -> Vec<Vec<usize>> {
     permutations
 }
 
+pub(crate) fn join_packets(packets: &[Vec<u8>]) -> Vec<u8> {
+    let total_len: usize = packets.iter().map(Vec::len).sum();
+    let mut joined = Vec::with_capacity(total_len);
+    for packet in packets {
+        joined.extend_from_slice(packet);
+    }
+    joined
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{one_swap_indices, one_swap_reordered_packets, two_inversion_reordered_packets};
+    use super::{
+        join_packets, one_swap_indices, one_swap_reordered_packets,
+        try_decode_and_decrypt_session_data, two_inversion_reordered_packets,
+    };
 
     #[test]
     fn one_swap_attempt_count_is_n_minus_1() {
@@ -115,5 +171,25 @@ mod tests {
         let packets = vec![0, 1];
         let candidates = two_inversion_reordered_packets(&packets);
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn join_packets_concatenates_in_order() {
+        let packets = vec![vec![1u8, 2], vec![3, 4]];
+        assert_eq!(join_packets(&packets), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn try_decode_recovers_from_one_swap() {
+        let packets = vec![vec![2u8], vec![1], vec![3]];
+        let decoded = try_decode_and_decrypt_session_data(&packets, |joined| {
+            if joined == [1, 2, 3] {
+                Ok(joined.to_vec())
+            } else {
+                anyhow::bail!("not decodable")
+            }
+        })
+        .expect("should recover by packet swap");
+        assert_eq!(decoded, vec![1, 2, 3]);
     }
 }

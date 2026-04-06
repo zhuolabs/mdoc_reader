@@ -3,7 +3,6 @@ use connection_handover::{
     BleAdStructure, BleLeRole, BleOobRecord, HandoverRequest, HandoverSelect,
     CONNECTION_HANDOVER_SERVICE_NAME,
 };
-use log::warn;
 use mdoc_core::{
     ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
     MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
@@ -12,7 +11,7 @@ use mdoc_core::{
 use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, ReaderFlowObserver, TransportKind};
 use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
 use nfc_reader::NfcReader;
-use packet_reorder_workaround::{one_swap_reordered_packets, two_inversion_reordered_packets};
+use packet_reorder_workaround::try_decode_and_decrypt_session_data;
 use std::convert::TryFrom;
 use tnep::TnepClient;
 use uuid::Uuid;
@@ -159,7 +158,10 @@ where
     notify_event(observer, ReaderFlowEvent::WaitingForUserApproval);
 
     let session_data_packets = transport.receive_packets().await?;
-    let decoded = try_decode_and_decrypt_session_data(&session_data_packets, &session_encryption)?;
+    let decrypt_counter = 1u32;
+    let decoded = try_decode_and_decrypt_session_data(&session_data_packets, |joined| {
+        decode_and_decrypt_session_data(joined, &session_encryption, decrypt_counter)
+    })?;
     if decoded.message.is_empty() {
         anyhow::bail!("device did not return SessionData");
     }
@@ -200,51 +202,10 @@ struct DecodedSessionData {
     message: Vec<u8>,
 }
 
-fn try_decode_and_decrypt_session_data(
-    packets: &[Vec<u8>],
-    session_encryption: &SessionEncryption,
-) -> Result<DecodedSessionData> {
-    let joined = join_packets(packets);
-    if let Ok(message) = decode_and_decrypt_session_data(&joined, session_encryption) {
-        return Ok(message);
-    }
-
-    let packet_len = packets.len();
-    if packet_len < 2 {
-        return decode_and_decrypt_session_data(&joined, session_encryption);
-    }
-
-    for (swap_at, swapped) in one_swap_reordered_packets(packets) {
-        let candidate = join_packets(&swapped);
-        if let Ok(message) = decode_and_decrypt_session_data(&candidate, session_encryption) {
-            warn!(
-                "session data recovered by swapping packet {} and {}",
-                swap_at,
-                swap_at + 1
-            );
-            return Ok(message);
-        }
-    }
-
-    if packet_len >= 3 {
-        for (permutation, reordered) in two_inversion_reordered_packets(packets) {
-            let candidate = join_packets(&reordered);
-            if let Ok(message) = decode_and_decrypt_session_data(&candidate, session_encryption) {
-                warn!(
-                    "session data recovered by inversion-2 permutation {:?}",
-                    permutation
-                );
-                return Ok(message);
-            }
-        }
-    }
-
-    decode_and_decrypt_session_data(&joined, session_encryption)
-}
-
 fn decode_and_decrypt_session_data(
     session_data: &[u8],
     session_encryption: &SessionEncryption,
+    decrypt_counter: u32,
 ) -> Result<DecodedSessionData> {
     let parsed: SessionData = minicbor::decode(session_data).with_context(|| {
         format!(
@@ -259,7 +220,7 @@ fn decode_and_decrypt_session_data(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("session data does not include encrypted data"))?;
     let message = session_encryption
-        .decrypt_data(ciphertext.as_slice(), 1)
+        .decrypt_data(ciphertext.as_slice(), decrypt_counter)
         .with_context(|| {
             format!(
                 "failed to decrypt session message: len={} head={}",
@@ -268,13 +229,4 @@ fn decode_and_decrypt_session_data(
             )
         })?;
     Ok(DecodedSessionData { parsed, message })
-}
-
-fn join_packets(packets: &[Vec<u8>]) -> Vec<u8> {
-    let total_len: usize = packets.iter().map(Vec::len).sum();
-    let mut joined = Vec::with_capacity(total_len);
-    for packet in packets {
-        joined.extend_from_slice(packet);
-    }
-    joined
 }
