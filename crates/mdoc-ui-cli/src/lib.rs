@@ -4,7 +4,7 @@ use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
 use log::debug;
 use mdoc_core::{CborBytes, DeviceResponse, ElementValue, FullDate, MobileSecurityObject, Status};
-use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, TransportKind};
+use mdoc_data_retrieval_flow::{DataRetrievalFlowEvent, EngagementMethod, TransportKind};
 use mdoc_ui::{FlowEventUi, MdocResultUi};
 use minicbor::bytes::ByteVec;
 use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
@@ -13,10 +13,10 @@ use x509_cert::ext::pkix::{CrlDistributionPoints, IssuerAltName};
 const PORTRAIT_WIDTH_CELLS: u32 = 30;
 
 #[derive(Default)]
-pub struct ConsoleReaderFlowObserver;
+pub struct ConsoleDataRetrievalFlowObserver;
 
-impl mdoc_reader_flow::ReaderFlowObserver for ConsoleReaderFlowObserver {
-    fn on_event(&self, event: ReaderFlowEvent) {
+impl mdoc_data_retrieval_flow::DataRetrievalFlowObserver for ConsoleDataRetrievalFlowObserver {
+    fn on_event(&self, event: DataRetrievalFlowEvent) {
         let ui = ConsoleMdocUi;
         let _ = ui.on_flow_event(event);
     }
@@ -38,36 +38,38 @@ impl MdocResultUi<()> for ConsoleMdocUi {
 impl FlowEventUi for ConsoleMdocUi {
     type Error = anyhow::Error;
 
-    fn on_flow_event(&self, event: ReaderFlowEvent) -> Result<()> {
+    fn on_flow_event(&self, event: DataRetrievalFlowEvent) -> Result<()> {
         print_flow_event(event);
         Ok(())
     }
 }
 
-pub fn print_flow_event(event: ReaderFlowEvent) {
+pub fn print_flow_event(event: DataRetrievalFlowEvent) {
     match event {
-        ReaderFlowEvent::WaitingForEngagement(method) => {
+        DataRetrievalFlowEvent::WaitingForEngagement(method) => {
             println!(
                 "[FLOW] Waiting for engagement ({})",
                 format_engagement_method(method)
             )
         }
-        ReaderFlowEvent::EngagementConnected(method) => {
+        DataRetrievalFlowEvent::EngagementConnected(method) => {
             println!(
                 "[FLOW] Engagement connected ({})",
                 format_engagement_method(method)
             )
         }
-        ReaderFlowEvent::TransportConnected(transport) => {
+        DataRetrievalFlowEvent::TransportConnected(transport) => {
             println!(
                 "[FLOW] Transport connected ({})",
                 format_transport_kind(transport)
             )
         }
-        ReaderFlowEvent::WaitingForUserApproval => {
+        DataRetrievalFlowEvent::WaitingForUserApproval => {
             println!("[FLOW] Waiting for user approval on mdoc device")
         }
-        ReaderFlowEvent::DeviceResponseReceived => println!("[FLOW] DeviceResponse received"),
+        DataRetrievalFlowEvent::DeviceResponseReceived => {
+            println!("[FLOW] DeviceResponse received")
+        }
     }
 }
 

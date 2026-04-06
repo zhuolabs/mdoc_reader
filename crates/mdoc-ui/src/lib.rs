@@ -1,5 +1,5 @@
 use mdoc_core::DeviceResponse;
-use mdoc_reader_flow::ReaderFlowEvent;
+use mdoc_data_retrieval_flow::DataRetrievalFlowEvent;
 
 pub trait MdocResultUi<V> {
     type Error;
@@ -14,5 +14,5 @@ pub trait MdocResultUi<V> {
 pub trait FlowEventUi {
     type Error;
 
-    fn on_flow_event(&self, event: ReaderFlowEvent) -> Result<(), Self::Error>;
+    fn on_flow_event(&self, event: DataRetrievalFlowEvent) -> Result<(), Self::Error>;
 }

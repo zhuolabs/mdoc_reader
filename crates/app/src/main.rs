@@ -6,9 +6,10 @@ use mdoc_core::{
     DeviceRequest, DeviceResponse, IssuerDataAuthContext, MdocDeviceAuthContext, NameSpaces,
     SessionTranscript, TaggedCborBytes, VerifiedMso,
 };
-use mdoc_reader_flow_nfc_ble::read_mdoc;
+use mdoc_data_retrieval_flow::DataRetrievalFlow;
+use mdoc_data_retrieval_flow_nfc_ble::NfcBleDataRetrievalFlow;
 use mdoc_reader_transport_ble_winrt::WinRtBleReaderTransportFactory;
-use mdoc_ui_cli::{render_device_response, ConsoleReaderFlowObserver};
+use mdoc_ui_cli::{render_device_response, ConsoleDataRetrievalFlowObserver};
 use nfc_reader_pcsc::PcscReader;
 use serde_json::Value;
 use std::{fs, path::Path};
@@ -51,21 +52,15 @@ async fn main() -> anyhow::Result<()> {
     let config_json = load_config_json(&cli)?;
 
     let mut nfc = PcscReader::new();
-    let observer = ConsoleReaderFlowObserver;
+    let observer = ConsoleDataRetrievalFlowObserver;
 
     let device_request = build_device_request_from_json(&config_json)?;
     info!("DeviceRequest={:?}", device_request);
 
     let transport_factory = WinRtBleReaderTransportFactory;
     info!("BLE transport factory selected");
-    let result = read_mdoc(
-        &mut nfc,
-        &transport_factory,
-        &device_request,
-        cli.service_uuid,
-        Some(&observer),
-    )
-    .await?;
+    let mut flow = NfcBleDataRetrievalFlow::new(&mut nfc, &transport_factory, cli.service_uuid);
+    let result = flow.retrieve_data(&device_request, Some(&observer)).await?;
 
     let validation = validate_device_response(&result.device_response, &result.session_transcript);
     print_validation_summary(&validation);
