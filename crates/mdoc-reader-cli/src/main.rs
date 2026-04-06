@@ -8,7 +8,7 @@ use mdoc_core::{
 };
 use mdoc_data_retrieval_flow::DataRetrievalFlow;
 use mdoc_data_retrieval_flow_nfc_ble::NfcBleDataRetrievalFlow;
-use mdoc_reader_transport_ble_winrt::WinRtBleReaderTransportFactory;
+use mdoc_transport_ble_winrt::WinRtBleMdocTransportFactory;
 use mdoc_ui_cli::{render_device_response, ConsoleDataRetrievalFlowObserver};
 use nfc_reader_pcsc::PcscReader;
 use serde_json::Value;
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let device_request = build_device_request_from_json(&config_json)?;
     info!("DeviceRequest={:?}", device_request);
 
-    let transport_factory = WinRtBleReaderTransportFactory;
+    let transport_factory = WinRtBleMdocTransportFactory;
     info!("BLE transport factory selected");
     let mut flow = NfcBleDataRetrievalFlow::new(&mut nfc, &transport_factory, cli.service_uuid);
     let result = flow.retrieve_data(&device_request, Some(&observer)).await?;

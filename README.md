@@ -28,7 +28,7 @@ To reduce the frequency of decode/decrypt failures caused by this issue, this
 repository applies two complementary workarounds:
 
 1. **Transport-side late-packet handling**  
-   In `crates/mdoc-reader-transport-ble-winrt/src/lib.rs`, after receiving the
+   In `crates/mdoc-transport-ble-winrt/src/lib.rs`, after receiving the
    final chunk (`CHUNK_LAST`), the transport waits up to 30 ms for an additional
    late chunk. If a late `CHUNK_MORE` arrives, it is inserted immediately before
    the final packet.

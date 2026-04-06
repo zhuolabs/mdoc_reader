@@ -8,7 +8,7 @@ pub struct BleTransportParams {
 }
 
 #[allow(async_fn_in_trait)]
-pub trait ReaderTransport {
+pub trait MdocTransport {
     async fn send(&mut self, message: &[u8]) -> Result<()>;
     async fn receive_packets(&mut self) -> Result<Vec<Vec<u8>>>;
 
@@ -24,8 +24,8 @@ pub trait ReaderTransport {
 }
 
 #[allow(async_fn_in_trait)]
-pub trait ReaderTransportConnector {
-    type Transport: ReaderTransport;
+pub trait MdocTransportConnector {
+    type Transport: MdocTransport;
     type Params;
 
     async fn connect(&self, params: Self::Params) -> Result<Self::Transport>;

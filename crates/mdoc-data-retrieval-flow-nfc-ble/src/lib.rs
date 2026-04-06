@@ -13,7 +13,7 @@ use mdoc_data_retrieval_flow::{
     DataRetrievalFlow, DataRetrievalFlowEvent, DataRetrievalFlowObserver, DataRetrievalResult,
     EngagementMethod, TransportKind,
 };
-use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
+use mdoc_transport::{BleTransportParams, MdocTransport, MdocTransportConnector};
 use nfc_reader::NfcReader;
 use packet_reorder_workaround::try_decode_and_decrypt_session_data;
 use std::convert::TryFrom;
@@ -27,7 +27,7 @@ const SESSION_DATA_STATUS_SESSION_TERMINATION: u64 = 20;
 pub struct NfcBleDataRetrievalFlow<'a, T, F>
 where
     T: NfcReader + ?Sized,
-    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+    F: MdocTransportConnector<Params = BleTransportParams> + ?Sized,
 {
     reader: &'a mut T,
     transport_factory: &'a F,
@@ -37,7 +37,7 @@ where
 impl<'a, T, F> NfcBleDataRetrievalFlow<'a, T, F>
 where
     T: NfcReader + ?Sized,
-    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+    F: MdocTransportConnector<Params = BleTransportParams> + ?Sized,
 {
     pub fn new(reader: &'a mut T, transport_factory: &'a F, service_uuid: Option<Uuid>) -> Self {
         Self {
@@ -52,7 +52,7 @@ where
 impl<T, F> DataRetrievalFlow for NfcBleDataRetrievalFlow<'_, T, F>
 where
     T: NfcReader + ?Sized,
-    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+    F: MdocTransportConnector<Params = BleTransportParams> + ?Sized,
 {
     type Error = anyhow::Error;
 
@@ -81,7 +81,7 @@ pub async fn read_mdoc<T, F>(
 ) -> Result<DataRetrievalResult>
 where
     T: NfcReader + ?Sized,
-    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+    F: MdocTransportConnector<Params = BleTransportParams> + ?Sized,
 {
     let service_uuid = service_uuid.unwrap_or_else(Uuid::new_v4);
 
@@ -182,7 +182,7 @@ async fn do_reader_flow_with_transport<T>(
     observer: Option<&dyn DataRetrievalFlowObserver>,
 ) -> Result<DataRetrievalResult>
 where
-    T: ReaderTransport + ?Sized,
+    T: MdocTransport + ?Sized,
 {
     let e_reader_key_public = e_reader_key_private.to_public();
     let encoded_device_request = minicbor::to_vec(device_request)?;
