@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use log::debug;
-use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
+use mdoc_transport::{BleTransportParams, MdocTransport, MdocTransportConnector};
 use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -32,7 +32,7 @@ enum Event {
     S2cSubscribed(bool),
 }
 
-pub struct WinRtBleReaderTransport {
+pub struct WinRtBleMdocTransport {
     service_provider: GattServiceProvider,
     s2c_char: GattLocalCharacteristic,
     event_rx: mpsc::UnboundedReceiver<Event>,
@@ -43,7 +43,7 @@ pub struct WinRtBleReaderTransport {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WinRtBleReaderTransportFactory;
+pub struct WinRtBleMdocTransportFactory;
 
 fn uuid_to_guid(uuid: Uuid) -> GUID {
     let (d1, d2, d3, d4) = uuid.as_fields();
@@ -125,7 +125,7 @@ fn register_write_handler(
     Ok(())
 }
 
-impl WinRtBleReaderTransport {
+impl WinRtBleMdocTransport {
     async fn wait_until_session_ready(&mut self) -> Result<()> {
         let start = std::time::Instant::now();
         let mut s2c_subscribed = false;
@@ -195,8 +195,8 @@ impl WinRtBleReaderTransport {
 }
 
 #[allow(async_fn_in_trait)]
-impl ReaderTransportConnector for WinRtBleReaderTransportFactory {
-    type Transport = WinRtBleReaderTransport;
+impl MdocTransportConnector for WinRtBleMdocTransportFactory {
+    type Transport = WinRtBleMdocTransport;
     type Params = BleTransportParams;
 
     async fn connect(&self, params: Self::Params) -> Result<Self::Transport> {
@@ -266,7 +266,7 @@ impl ReaderTransportConnector for WinRtBleReaderTransportFactory {
             ))?;
         }
 
-        let mut transport = WinRtBleReaderTransport {
+        let mut transport = WinRtBleMdocTransport {
             service_provider,
             s2c_char,
             event_rx,
@@ -290,7 +290,7 @@ impl ReaderTransportConnector for WinRtBleReaderTransportFactory {
 }
 
 #[allow(async_fn_in_trait)]
-impl ReaderTransport for WinRtBleReaderTransport {
+impl MdocTransport for WinRtBleMdocTransport {
     async fn send(&mut self, message: &[u8]) -> Result<()> {
         if message.is_empty() {
             let ibuf = bytes_to_ibuf(&[CHUNK_LAST])?;
@@ -346,7 +346,7 @@ impl ReaderTransport for WinRtBleReaderTransport {
     }
 }
 
-impl Drop for WinRtBleReaderTransport {
+impl Drop for WinRtBleMdocTransport {
     fn drop(&mut self) {
         if self.advertising_started {
             let _ = self.service_provider.StopAdvertising();

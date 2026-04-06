@@ -1,10 +1,10 @@
 [package]
-name = "mdoc-reader-transport-ble-winrt"
+name = "mdoc-transport-ble-winrt"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mdoc-reader-transport = { path = "../mdoc-reader-transport" }
+mdoc-transport = { path = "../mdoc-transport" }
 anyhow = "1"
 uuid = "1"
 tokio = { version = "1", features = ["sync", "time", "rt-multi-thread"] }

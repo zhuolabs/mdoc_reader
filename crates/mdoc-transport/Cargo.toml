@@ -1,5 +1,5 @@
 [package]
-name = "mdoc-reader-transport"
+name = "mdoc-transport"
 version = "0.1.0"
 edition = "2021"
 

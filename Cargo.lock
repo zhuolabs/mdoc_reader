@@ -1378,7 +1378,7 @@ dependencies = [
  "log",
  "mdoc-core",
  "mdoc-data-retrieval-flow",
- "mdoc-reader-transport",
+ "mdoc-transport",
  "minicbor",
  "nfc-reader",
  "tnep",
@@ -1386,7 +1386,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mdoc-reader-transport"
+name = "mdoc-transport"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1394,13 +1394,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "mdoc-reader-transport-ble-winrt"
+name = "mdoc-transport-ble-winrt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
  "log",
- "mdoc-reader-transport",
+ "mdoc-transport",
  "tokio",
  "uuid",
  "windows",
@@ -1444,7 +1444,7 @@ dependencies = [
  "mdoc-core",
  "mdoc-data-retrieval-flow",
  "mdoc-data-retrieval-flow-nfc-ble",
- "mdoc-reader-transport-ble-winrt",
+ "mdoc-transport-ble-winrt",
  "mdoc-ui-cli",
  "nfc-reader-pcsc",
  "serde_json",

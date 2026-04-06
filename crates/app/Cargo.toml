@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 mdoc-core = { path = "../mdoc-core" }
 nfc-reader-pcsc = { path = "../nfc-reader-pcsc" }
-mdoc-reader-transport-ble-winrt = { path = "../mdoc-reader-transport-ble-winrt" }
+mdoc-transport-ble-winrt = { path = "../mdoc-transport-ble-winrt" }
 mdoc-data-retrieval-flow = { path = "../mdoc-data-retrieval-flow" }
 mdoc-data-retrieval-flow-nfc-ble = { path = "../mdoc-data-retrieval-flow-nfc-ble" }
 mdoc-ui-cli = { path = "../mdoc-ui-cli" }

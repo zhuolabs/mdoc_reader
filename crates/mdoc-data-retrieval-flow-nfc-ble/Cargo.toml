@@ -9,7 +9,7 @@ anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 connection-handover = { path = "../connection-handover" }
 mdoc-core = { path = "../mdoc-core" }
-mdoc-reader-transport = { path = "../mdoc-reader-transport" }
+mdoc-transport = { path = "../mdoc-transport" }
 mdoc-data-retrieval-flow = { path = "../mdoc-data-retrieval-flow" }
 nfc-reader = { path = "../nfc-reader" }
 tnep = { path = "../tnep" }
