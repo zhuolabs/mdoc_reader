@@ -1,14 +1,18 @@
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use connection_handover::{
     BleAdStructure, BleLeRole, BleOobRecord, HandoverRequest, HandoverSelect,
     CONNECTION_HANDOVER_SERVICE_NAME,
 };
 use mdoc_core::{
-    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
-    MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
+    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, MdocRole,
+    NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
     SessionTranscript, TaggedCborBytes,
 };
-use mdoc_reader_flow::{EngagementMethod, ReaderFlowEvent, ReaderFlowObserver, TransportKind};
+use mdoc_data_retrieval_flow::{
+    DataRetrievalFlow, DataRetrievalFlowEvent, DataRetrievalFlowObserver, DataRetrievalResult,
+    EngagementMethod, TransportKind,
+};
 use mdoc_reader_transport::{BleTransportParams, ReaderTransport, ReaderTransportConnector};
 use nfc_reader::NfcReader;
 use packet_reorder_workaround::try_decode_and_decrypt_session_data;
@@ -20,10 +24,52 @@ mod packet_reorder_workaround;
 
 const SESSION_DATA_STATUS_SESSION_TERMINATION: u64 = 20;
 
-#[derive(Debug, Clone)]
-pub struct ReadMdocResult {
-    pub device_response: DeviceResponse,
-    pub session_transcript: TaggedCborBytes<SessionTranscript>,
+pub struct NfcBleDataRetrievalFlow<'a, T, F>
+where
+    T: NfcReader + ?Sized,
+    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+{
+    reader: &'a mut T,
+    transport_factory: &'a F,
+    service_uuid: Option<Uuid>,
+}
+
+impl<'a, T, F> NfcBleDataRetrievalFlow<'a, T, F>
+where
+    T: NfcReader + ?Sized,
+    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+{
+    pub fn new(reader: &'a mut T, transport_factory: &'a F, service_uuid: Option<Uuid>) -> Self {
+        Self {
+            reader,
+            transport_factory,
+            service_uuid,
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl<T, F> DataRetrievalFlow for NfcBleDataRetrievalFlow<'_, T, F>
+where
+    T: NfcReader + ?Sized,
+    F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
+{
+    type Error = anyhow::Error;
+
+    async fn retrieve_data(
+        &mut self,
+        device_request: &DeviceRequest,
+        observer: Option<&dyn DataRetrievalFlowObserver>,
+    ) -> Result<DataRetrievalResult> {
+        read_mdoc(
+            self.reader,
+            self.transport_factory,
+            device_request,
+            self.service_uuid,
+            observer,
+        )
+        .await
+    }
 }
 
 pub async fn read_mdoc<T, F>(
@@ -31,8 +77,8 @@ pub async fn read_mdoc<T, F>(
     transport_factory: &F,
     device_request: &DeviceRequest,
     service_uuid: Option<Uuid>,
-    observer: Option<&dyn ReaderFlowObserver>,
-) -> Result<ReadMdocResult>
+    observer: Option<&dyn DataRetrievalFlowObserver>,
+) -> Result<DataRetrievalResult>
 where
     T: NfcReader + ?Sized,
     F: ReaderTransportConnector<Params = BleTransportParams> + ?Sized,
@@ -41,7 +87,7 @@ where
 
     notify_event(
         observer,
-        ReaderFlowEvent::WaitingForEngagement(EngagementMethod::Nfc),
+        DataRetrievalFlowEvent::WaitingForEngagement(EngagementMethod::Nfc),
     );
 
     let mut nfc = reader
@@ -51,7 +97,7 @@ where
 
     notify_event(
         observer,
-        ReaderFlowEvent::EngagementConnected(EngagementMethod::Nfc),
+        DataRetrievalFlowEvent::EngagementConnected(EngagementMethod::Nfc),
     );
 
     let mut tnep = TnepClient::new(&mut nfc)
@@ -113,7 +159,7 @@ where
         .await?;
     notify_event(
         observer,
-        ReaderFlowEvent::TransportConnected(TransportKind::Ble),
+        DataRetrievalFlowEvent::TransportConnected(TransportKind::Ble),
     );
 
     do_reader_flow_with_transport(
@@ -133,8 +179,8 @@ async fn do_reader_flow_with_transport<T>(
     session_transcript: &TaggedCborBytes<SessionTranscript>,
     e_reader_key_private: &CoseKeyPrivate,
     device_request: &DeviceRequest,
-    observer: Option<&dyn ReaderFlowObserver>,
-) -> Result<ReadMdocResult>
+    observer: Option<&dyn DataRetrievalFlowObserver>,
+) -> Result<DataRetrievalResult>
 where
     T: ReaderTransport + ?Sized,
 {
@@ -155,7 +201,7 @@ where
     };
     let encoded_session_establishment = minicbor::to_vec(session_establishment)?;
     transport.send(&encoded_session_establishment).await?;
-    notify_event(observer, ReaderFlowEvent::WaitingForUserApproval);
+    notify_event(observer, DataRetrievalFlowEvent::WaitingForUserApproval);
 
     let session_data_packets = transport.receive_packets().await?;
     let decrypt_counter = 1u32;
@@ -166,8 +212,8 @@ where
         anyhow::bail!("device did not return SessionData");
     }
 
-    let device_response: DeviceResponse = minicbor::decode(&decoded.message)?;
-    notify_event(observer, ReaderFlowEvent::DeviceResponseReceived);
+    let device_response = minicbor::decode(&decoded.message)?;
+    notify_event(observer, DataRetrievalFlowEvent::DeviceResponseReceived);
 
     if decoded.parsed.status != Some(SESSION_DATA_STATUS_SESSION_TERMINATION) {
         let termination = minicbor::to_vec(SessionData {
@@ -177,13 +223,13 @@ where
         transport.send(&termination).await?;
     }
 
-    Ok(ReadMdocResult {
+    Ok(DataRetrievalResult {
         device_response,
         session_transcript: session_transcript.clone(),
     })
 }
 
-fn notify_event(observer: Option<&dyn ReaderFlowObserver>, event: ReaderFlowEvent) {
+fn notify_event(observer: Option<&dyn DataRetrievalFlowObserver>, event: DataRetrievalFlowEvent) {
     if let Some(observer) = observer {
         observer.on_event(event);
     }

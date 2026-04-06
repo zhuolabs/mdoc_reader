@@ -1,8 +1,8 @@
 [workspace]
 members = [
     "crates/mdoc-reader-transport",
-    "crates/mdoc-reader-flow",
-    "crates/mdoc-reader-flow-nfc-ble",
+    "crates/mdoc-data-retrieval-flow",
+    "crates/mdoc-data-retrieval-flow-nfc-ble",
     "crates/connection-handover",
     "crates/tnep",
     "crates/nfc-reader",

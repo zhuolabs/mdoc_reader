@@ -1,15 +1,16 @@
 [package]
-name = "mdoc-reader-flow-nfc-ble"
+name = "mdoc-data-retrieval-flow-nfc-ble"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-trait = "0.1"
 anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 connection-handover = { path = "../connection-handover" }
 mdoc-core = { path = "../mdoc-core" }
 mdoc-reader-transport = { path = "../mdoc-reader-transport" }
-mdoc-reader-flow = { path = "../mdoc-reader-flow" }
+mdoc-data-retrieval-flow = { path = "../mdoc-data-retrieval-flow" }
 nfc-reader = { path = "../nfc-reader" }
 tnep = { path = "../tnep" }
 minicbor = { version = "2.2", features = ["std"] }
