@@ -67,7 +67,11 @@ async fn main() -> anyhow::Result<()> {
 
     let device_request = build_device_request_from_json(&config_json)?;
     info!("DeviceRequest={:?}", device_request);
-    let iaca_cert_der = cli.iaca_cert.as_ref().map(load_certificate_file).transpose()?;
+    let iaca_cert_der = cli
+        .iaca_cert
+        .as_ref()
+        .map(load_certificate_file)
+        .transpose()?;
 
     let transport_factory = WinRtBleMdocTransportFactory;
     info!("BLE transport factory selected");
@@ -105,8 +109,8 @@ fn load_json_file(path: impl AsRef<Path>) -> anyhow::Result<Value> {
 
 fn load_certificate_file(path: impl AsRef<Path>) -> anyhow::Result<Vec<u8>> {
     let path = path.as_ref();
-    let bytes =
-        fs::read(path).with_context(|| format!("failed to read certificate file: {}", path.display()))?;
+    let bytes = fs::read(path)
+        .with_context(|| format!("failed to read certificate file: {}", path.display()))?;
 
     if bytes.starts_with(b"-----BEGIN ") {
         decode_pem_certificate(&bytes)

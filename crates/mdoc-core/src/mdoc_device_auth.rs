@@ -68,7 +68,9 @@ pub fn verify_mdoc_device_auth(
         device_auth.device_signature.as_ref(),
         device_auth.device_mac.as_ref(),
     ) {
-        (Some(_), Some(_)) | (None, None) => return Err(MdocDeviceAuthError::DeviceAuthModeInvalid),
+        (Some(_), Some(_)) | (None, None) => {
+            return Err(MdocDeviceAuthError::DeviceAuthModeInvalid)
+        }
         (None, Some(_)) => return Err(MdocDeviceAuthError::DeviceMacUnsupported),
         (Some(device_signature), None) => {
             let expected_payload = build_device_authentication_bytes(
@@ -81,17 +83,15 @@ pub fn verify_mdoc_device_auth(
                     return Err(MdocDeviceAuthError::DeviceAuthPayloadMismatch);
                 }
             }
-            let verifying_key: VerifyingKey = (&ctx.verified_mso.mso.device_key_info.device_key).try_into().map_err(|err| {
-                MdocDeviceAuthError::DeviceAuthenticationEncodingFailed(format!(
-                    "failed to convert device key to verifying key: {err}"
-                ))
-            })?;
+            let verifying_key: VerifyingKey = (&ctx.verified_mso.mso.device_key_info.device_key)
+                .try_into()
+                .map_err(|err| {
+                    MdocDeviceAuthError::DeviceAuthenticationEncodingFailed(format!(
+                        "failed to convert device key to verifying key: {err}"
+                    ))
+                })?;
             device_signature
-                .verify_detached_payload(
-                    &verifying_key,
-                    b"",
-                    &expected_payload,
-                )
+                .verify_detached_payload(&verifying_key, b"", &expected_payload)
                 .map_err(|err| MdocDeviceAuthError::DeviceSignatureInvalid(err.to_string()))?;
 
             verify_key_authorizations(doc, &ctx.verified_mso)
@@ -122,7 +122,8 @@ fn verify_key_authorizations(
     doc: &MdocDocument,
     verified_mso: &VerifiedMso,
 ) -> Result<(), MdocDeviceAuthError> {
-    let Some(key_authorizations) = verified_mso.mso.device_key_info.key_authorizations.as_ref() else {
+    let Some(key_authorizations) = verified_mso.mso.device_key_info.key_authorizations.as_ref()
+    else {
         return Ok(());
     };
 
@@ -136,11 +137,10 @@ fn verify_key_authorizations(
         .as_ref()
         .cloned()
         .unwrap_or_default();
-    let device_name_spaces = doc
-        .device_signed
-        .name_spaces
-        .decode()
-        .map_err(|err| MdocDeviceAuthError::DeviceAuthenticationEncodingFailed(err.to_string()))?;
+    let device_name_spaces =
+        doc.device_signed.name_spaces.decode().map_err(|err| {
+            MdocDeviceAuthError::DeviceAuthenticationEncodingFailed(err.to_string())
+        })?;
 
     for (namespace, items) in device_name_spaces {
         let namespace_allowed = allowed_namespaces.contains(&namespace);
@@ -194,8 +194,8 @@ mod tests {
     use crate::device_response::{DeviceAuth, DeviceSigned, IssuerSigned};
     use crate::mobile_security_object::{DeviceKeyInfo, KeyAuthorizations};
     use crate::{
-        CborBytes, CoseAlg, CoseKeyPrivate, CoseSign1, HeaderMap, MdocDocument, MobileSecurityObject,
-        ProtectedHeaderMap, TDate, TaggedCborBytes, ValidityInfo,
+        CborBytes, CoseAlg, CoseKeyPrivate, CoseSign1, HeaderMap, MdocDocument,
+        MobileSecurityObject, ProtectedHeaderMap, TDate, TaggedCborBytes, ValidityInfo,
     };
 
     #[test]
@@ -238,7 +238,14 @@ mod tests {
     #[test]
     fn verify_mdoc_device_auth_accepts_detached_payload() {
         let mut fixture = signed_document_fixture();
-        fixture.document.device_signed.device_auth.device_signature.as_mut().unwrap().payload = None;
+        fixture
+            .document
+            .device_signed
+            .device_auth
+            .device_signature
+            .as_mut()
+            .unwrap()
+            .payload = None;
 
         verify_mdoc_device_auth(&fixture.document, &fixture.context).unwrap();
     }
@@ -246,8 +253,14 @@ mod tests {
     #[test]
     fn verify_mdoc_device_auth_rejects_payload_mismatch() {
         let mut fixture = signed_document_fixture();
-        fixture.document.device_signed.device_auth.device_signature.as_mut().unwrap().payload =
-            Some(CborBytes::from_raw_bytes(vec![0x01]));
+        fixture
+            .document
+            .device_signed
+            .device_auth
+            .device_signature
+            .as_mut()
+            .unwrap()
+            .payload = Some(CborBytes::from_raw_bytes(vec![0x01]));
 
         let err = verify_mdoc_device_auth(&fixture.document, &fixture.context).unwrap_err();
         assert_eq!(err, MdocDeviceAuthError::DeviceAuthPayloadMismatch);
@@ -256,11 +269,20 @@ mod tests {
     #[test]
     fn verify_mdoc_device_auth_rejects_invalid_signature() {
         let mut fixture = signed_document_fixture();
-        fixture.document.device_signed.device_auth.device_signature.as_mut().unwrap().signature =
-            ByteVec::from(vec![0u8; 64]);
+        fixture
+            .document
+            .device_signed
+            .device_auth
+            .device_signature
+            .as_mut()
+            .unwrap()
+            .signature = ByteVec::from(vec![0u8; 64]);
 
         let err = verify_mdoc_device_auth(&fixture.document, &fixture.context).unwrap_err();
-        assert!(matches!(err, MdocDeviceAuthError::DeviceSignatureInvalid(_)));
+        assert!(matches!(
+            err,
+            MdocDeviceAuthError::DeviceSignatureInvalid(_)
+        ));
     }
 
     #[test]
@@ -330,8 +352,7 @@ mod tests {
     fn signed_document_fixture() -> SignedDocumentFixture {
         let device_key_private = CoseKeyPrivate::new().unwrap();
         let device_key_public = device_key_private.to_public();
-        let signing_key =
-            SigningKey::from_bytes(device_key_private.d.as_slice().into()).unwrap();
+        let signing_key = SigningKey::from_bytes(device_key_private.d.as_slice().into()).unwrap();
         let reader_key = TaggedCborBytes::from(&CoseKeyPrivate::new().unwrap().to_public());
         let session_transcript = TaggedCborBytes::from(&SessionTranscript(
             None,
@@ -346,12 +367,9 @@ mod tests {
             )]),
         )]));
         let doc_type = "org.iso.18013.5.1.mDL".to_string();
-        let payload = build_device_authentication_bytes(
-            &session_transcript,
-            &doc_type,
-            &device_name_spaces,
-        )
-        .unwrap();
+        let payload =
+            build_device_authentication_bytes(&session_transcript, &doc_type, &device_name_spaces)
+                .unwrap();
         let protected = ProtectedHeaderMap::from(&HeaderMap {
             alg: Some(CoseAlg::ES256),
             x5chain: None,

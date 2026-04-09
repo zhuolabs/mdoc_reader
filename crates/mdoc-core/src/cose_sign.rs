@@ -1,8 +1,8 @@
 use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Decoder, Encode, Encoder};
-use p256::ecdsa::VerifyingKey;
 use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::VerifyingKey;
 use x509_cert::der::{Decode as DerDecode, Encode as DerEncode};
 
 use crate::{CborAny, CborBytes};
@@ -219,20 +219,12 @@ where
         Ok(self.unprotected.document_signer_cert())
     }
 
-    pub fn verify(
-        &self,
-        verifying_key: &VerifyingKey,
-        external_aad: &[u8],
-    ) -> Result<()> {
+    pub fn verify(&self, verifying_key: &VerifyingKey, external_aad: &[u8]) -> Result<()> {
         let payload = self
             .payload
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
-        self.verify_detached_payload(
-            verifying_key,
-            external_aad,
-            payload.raw_cbor_bytes()
-        )
+        self.verify_detached_payload(verifying_key, external_aad, payload.raw_cbor_bytes())
     }
 
     pub fn verify_with_certificate(
@@ -247,9 +239,7 @@ where
             .as_bytes()
             .ok_or_else(|| anyhow::anyhow!("certificate public key is not byte-aligned"))?;
         let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(sec1_bytes)
-            .map_err(|_| {
-                anyhow::anyhow!("certificate public key is not a valid P-256 key")
-            })?;
+            .map_err(|_| anyhow::anyhow!("certificate public key is not a valid P-256 key"))?;
         self.verify(&verifying_key, external_aad)
     }
 
@@ -492,9 +482,7 @@ mod tests {
                 .as_bytes(),
         )
         .unwrap();
-        sign1
-            .verify(&(&public_key).into(), b"")
-            .unwrap();
+        sign1.verify(&(&public_key).into(), b"").unwrap();
     }
 
     #[test]

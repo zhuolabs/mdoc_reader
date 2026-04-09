@@ -35,9 +35,7 @@ pub use ident::ble_ident;
 pub use issuer_data_auth::{
     verify_issuer_data_auth, IssuerDataAuthContext, IssuerDataAuthError, VerifiedMso,
 };
-pub use mdoc_device_auth::{
-    verify_mdoc_device_auth, MdocDeviceAuthContext, MdocDeviceAuthError,
-};
+pub use mdoc_device_auth::{verify_mdoc_device_auth, MdocDeviceAuthContext, MdocDeviceAuthError};
 pub use mobile_security_object::{
     Certificate, DataElements, DeviceKeyInfo, DigestIds, Identifier, IdentifierListInfo,
     KeyAuthorizations, KeyInfo, MobileSecurityObject, Status, StatusListInfo, TDate, ValidityInfo,
