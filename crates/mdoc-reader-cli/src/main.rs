@@ -12,8 +12,9 @@ use mdoc_transport_ble_winrt::WinRtBleMdocTransportFactory;
 use mdoc_ui_cli::{render_device_response, ConsoleDataRetrievalFlowObserver};
 use nfc_reader_pcsc::PcscReader;
 use serde_json::Value;
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::SystemTime};
 use uuid::Uuid;
+use x509_cert::der::Encode as _;
 
 const DEFAULT_REQUEST_JSON: &str = include_str!("../../../request.example.json");
 const DEFAULT_REQUEST_HELP: &str = concat!(
@@ -29,6 +30,13 @@ struct Cli {
 
     #[arg(long, value_name = "UUID", help = "BLE service UUID")]
     service_uuid: Option<Uuid>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Path to IACA certificate DER used for certificate validation"
+    )]
+    iaca_cert_der: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,6 +50,7 @@ struct DocumentValidation {
     cose_sign1: Result<(), String>,
     issuer_data_auth: Result<VerifiedMso, String>,
     mdoc_device_auth: Result<(), String>,
+    certificate_validation: Option<Result<(), String>>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -56,13 +65,18 @@ async fn main() -> anyhow::Result<()> {
 
     let device_request = build_device_request_from_json(&config_json)?;
     info!("DeviceRequest={:?}", device_request);
+    let iaca_cert_der = cli.iaca_cert_der.as_ref().map(load_der_file).transpose()?;
 
     let transport_factory = WinRtBleMdocTransportFactory;
     info!("BLE transport factory selected");
     let mut flow = NfcBleDataRetrievalFlow::new(&mut nfc, &transport_factory, cli.service_uuid);
     let result = flow.retrieve_data(&device_request, Some(&observer)).await?;
 
-    let validation = validate_device_response(&result.device_response, &result.session_transcript);
+    let validation = validate_device_response(
+        &result.device_response,
+        &result.session_transcript,
+        iaca_cert_der.as_deref(),
+    );
     print_validation_summary(&validation);
     render_device_response(&result.device_response)
 }
@@ -79,6 +93,11 @@ fn load_json_file(path: impl AsRef<Path>) -> anyhow::Result<Value> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read config: {}", path.display()))?;
     parse_json(&raw, &path.display().to_string())
+}
+
+fn load_der_file(path: impl AsRef<Path>) -> anyhow::Result<Vec<u8>> {
+    let path = path.as_ref();
+    fs::read(path).with_context(|| format!("failed to read DER file: {}", path.display()))
 }
 
 fn parse_json(raw: &str, source: &str) -> anyhow::Result<Value> {
@@ -129,6 +148,7 @@ fn build_namespaces_from_json(items_request: &Value, idx: usize) -> anyhow::Resu
 fn validate_device_response(
     response: &DeviceResponse,
     session_transcript: &TaggedCborBytes<SessionTranscript>,
+    iaca_cert_der: Option<&[u8]>,
 ) -> DeviceResponseValidation {
     let documents = response
         .documents
@@ -178,12 +198,16 @@ fn validate_device_response(
                         Err(err) => Err(err.to_string()),
                     };
                     let issuer_data_auth = issuer_data_auth.map_err(|err| err.to_string());
+                    let certificate_validation = iaca_cert_der.map(|der| {
+                        validate_certificate_chain_with_iaca(&doc.issuer_signed.issuer_auth, der)
+                    });
 
                     DocumentValidation {
                         doc_type: doc.doc_type.clone(),
                         cose_sign1,
                         issuer_data_auth,
                         mdoc_device_auth,
+                        certificate_validation,
                     }
                 })
                 .collect()
@@ -191,6 +215,29 @@ fn validate_device_response(
         .unwrap_or_default();
 
     DeviceResponseValidation { documents }
+}
+
+fn validate_certificate_chain_with_iaca(
+    issuer_auth: &mdoc_core::CoseSign1<TaggedCborBytes<mdoc_core::MobileSecurityObject>>,
+    iaca_cert_der: &[u8],
+) -> Result<(), String> {
+    let x5chain = issuer_auth
+        .unprotected
+        .x5chain
+        .as_ref()
+        .ok_or_else(|| "issuerAuth x5chain is missing".to_string())?;
+    let chain_der = x5chain
+        .as_slice()
+        .iter()
+        .map(|cert| {
+            cert.to_der()
+                .map_err(|err| format!("failed to encode x5chain certificate to DER: {err}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    mdoc_validation::validate_reader_auth_certificate(iaca_cert_der, &chain_der, SystemTime::now())
+        .map(|_| ())
+        .map_err(|err| err.to_string())
 }
 
 fn print_validation_summary(validation: &DeviceResponseValidation) {
@@ -231,6 +278,19 @@ fn print_validation_summary(validation: &DeviceResponseValidation) {
                 "[ERR] Document[{idx}] mdoc_device_auth verification failed docType={} error={err}",
                 doc.doc_type
             ),
+        }
+
+        if let Some(result) = &doc.certificate_validation {
+            match result {
+                Ok(()) => println!(
+                    "[OK] Document[{idx}] certificate_validation passed docType={}",
+                    doc.doc_type
+                ),
+                Err(err) => println!(
+                    "[ERR] Document[{idx}] certificate_validation failed docType={} error={err}",
+                    doc.doc_type
+                ),
+            }
         }
     }
 }

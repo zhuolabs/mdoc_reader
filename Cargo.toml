@@ -12,5 +12,6 @@ members = [
     "crates/mdoc-reader-cli",
     "crates/mdoc-ui-cli",
     "crates/mdoc-ui",
+    "crates/mdoc-validation",
 ]
 resolver = "2"
