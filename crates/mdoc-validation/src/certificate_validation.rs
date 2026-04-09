@@ -2,10 +2,14 @@ use std::time::SystemTime;
 
 use log::{info, warn};
 use reqwest::blocking::Client;
+use rustls_pki_types::{CertificateDer, UnixTime};
 use url::Url;
+use webpki::{
+    anchor_from_trusted_cert, BorrowedCertRevocationList, CertRevocationList, EndEntityCert,
+    Error as WebPkiError, ExpirationPolicy, ExtendedKeyUsageValidator, KeyPurposeIdIter,
+    RevocationCheckDepth, RevocationOptionsBuilder, UnknownStatusPolicy,
+};
 use x509_parser::extensions::{GeneralName, ParsedExtension};
-use x509_parser::num_bigint::BigUint;
-use x509_parser::parse_x509_crl;
 use x509_parser::prelude::FromDer;
 
 use crate::ValidationError;
@@ -63,107 +67,82 @@ pub fn validate_reader_auth_certificate(
         x5chain.len()
     );
 
+    let iaca_der = CertificateDer::from(iacacert_der);
+    let iaca_anchor =
+        anchor_from_trusted_cert(&iaca_der).map_err(map_webpki_error_to_validation_error)?;
     let (_, iaca) = x509_parser::certificate::X509Certificate::from_der(iacacert_der)
         .map_err(|e| ValidationError::CertificateParse(e.to_string()))?;
 
-    let mut certs = Vec::with_capacity(x5chain.len());
+    let mut parsed_chain = Vec::with_capacity(x5chain.len());
+    let mut chain_der = Vec::with_capacity(x5chain.len());
     for der in x5chain {
         let (_, cert) = x509_parser::certificate::X509Certificate::from_der(der)
             .map_err(|e| ValidationError::CertificateParse(e.to_string()))?;
-        certs.push(cert);
+        parsed_chain.push(cert);
+        chain_der.push(CertificateDer::from(der.as_slice()));
     }
 
-    validate_time(&iaca, now)?;
-    for cert in &certs {
-        validate_time(cert, now)?;
-    }
+    validate_key_usage(&parsed_chain[0])?;
 
-    validate_basic_constraints(&iaca, &certs)?;
-    validate_key_usage(&certs[0])?;
-
-    for pair in certs.windows(2) {
-        let child = &pair[0];
-        let issuer = &pair[1];
-        if child.issuer() != issuer.subject() {
-            return Err(ValidationError::InvalidChain);
-        }
-    }
-
-    let last = certs.last().ok_or(ValidationError::InvalidChain)?;
-    if last.issuer() != iaca.subject() {
-        return Err(ValidationError::InvalidChain);
-    }
+    let end_entity =
+        EndEntityCert::try_from(&chain_der[0]).map_err(map_webpki_error_to_validation_error)?;
+    let intermediates = &chain_der[1..];
+    let trust_anchors = [iaca_anchor];
+    let now = UnixTime::since_unix_epoch(
+        now.duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|_| ValidationError::Expired)?,
+    );
 
     let mut crl_checked = false;
+    let mut crls = Vec::new();
     if let Some(crl_url) = extract_first_crl_uri(&iaca) {
         info!("certificate_validation: CRL distribution point found url={crl_url}");
         let crl_der = download_crl_der(&crl_url)?;
-        let (_, crl) =
-            parse_x509_crl(&crl_der).map_err(|e| ValidationError::CrlParse(e.to_string()))?;
+        let crl = BorrowedCertRevocationList::from_der(&crl_der)
+            .map_err(|e| ValidationError::CrlParse(e.to_string()))?;
+        let crl = CertRevocationList::from(
+            crl.to_owned()
+                .map_err(|e| ValidationError::CrlParse(e.to_string()))?,
+        );
+        crls.push(crl);
         crl_checked = true;
         info!(
-            "certificate_validation: CRL parsed url={} bytes={} revoked_entries={}",
+            "certificate_validation: CRL parsed url={} bytes={}",
             crl_url,
             crl_der.len(),
-            crl.iter_revoked_certificates().count()
         );
-
-        let leaf_serial = BigUint::from_bytes_be(certs[0].raw_serial());
-        for revoked in crl.iter_revoked_certificates() {
-            let serial = BigUint::from_bytes_be(revoked.raw_serial());
-            if serial == leaf_serial {
-                warn!("certificate_validation: leaf certificate serial matched CRL entry");
-                return Err(ValidationError::Revoked);
-            }
-        }
     } else {
         info!("certificate_validation: no CRL distribution point found in IACA certificate");
     }
 
+    let crl_refs = crls.iter().collect::<Vec<_>>();
+    let revocation = if crl_refs.is_empty() {
+        None
+    } else {
+        Some(
+            RevocationOptionsBuilder::new(&crl_refs)
+                .map_err(|_| ValidationError::CrlParse("no CRLs provided".to_string()))?
+                .with_depth(RevocationCheckDepth::EndEntity)
+                .with_status_policy(UnknownStatusPolicy::Deny)
+                .with_expiration_policy(ExpirationPolicy::Ignore)
+                .build(),
+        )
+    };
+
+    end_entity
+        .verify_for_usage(
+            webpki::ALL_VERIFICATION_ALGS,
+            &trust_anchors,
+            intermediates,
+            now,
+            AllowAnyExtendedKeyUsage,
+            revocation,
+            None,
+        )
+        .map_err(map_webpki_error_to_validation_error)?;
+
     info!("certificate_validation: completed crl_checked={crl_checked}");
     Ok(CertificateValidationOutcome::Valid { crl_checked })
-}
-
-fn validate_time(
-    cert: &x509_parser::certificate::X509Certificate<'_>,
-    now: SystemTime,
-) -> Result<(), ValidationError> {
-    let now = time::OffsetDateTime::from(now);
-    let not_before = cert.validity().not_before.to_datetime();
-    let not_after = cert.validity().not_after.to_datetime();
-    if now < not_before || now > not_after {
-        return Err(ValidationError::Expired);
-    }
-    Ok(())
-}
-
-fn validate_basic_constraints(
-    iaca: &x509_parser::certificate::X509Certificate<'_>,
-    chain: &[x509_parser::certificate::X509Certificate<'_>],
-) -> Result<(), ValidationError> {
-    if let Ok(Some(bc)) = iaca.basic_constraints() {
-        if !bc.value.ca {
-            return Err(ValidationError::InvalidChain);
-        }
-    }
-
-    if let Some(leaf) = chain.first() {
-        if let Ok(Some(bc)) = leaf.basic_constraints() {
-            if bc.value.ca {
-                return Err(ValidationError::InvalidChain);
-            }
-        }
-    }
-
-    for cert in chain.iter().skip(1) {
-        if let Ok(Some(bc)) = cert.basic_constraints() {
-            if !bc.value.ca {
-                return Err(ValidationError::InvalidChain);
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn validate_key_usage(
@@ -217,19 +196,20 @@ fn download_crl_der(crl_url: &Url) -> Result<Vec<u8>, ValidationError> {
         .send()
         .and_then(|resp| resp.error_for_status())
         .map_err(|err| {
-            warn!("certificate_validation: CRL download failed url={} error={err}", crl_url);
-            ValidationError::CrlUnavailable
-        })?;
-
-    let bytes = response
-        .bytes()
-        .map_err(|err| {
             warn!(
-                "certificate_validation: CRL response body read failed url={} error={err}",
+                "certificate_validation: CRL download failed url={} error={err}",
                 crl_url
             );
             ValidationError::CrlUnavailable
         })?;
+
+    let bytes = response.bytes().map_err(|err| {
+        warn!(
+            "certificate_validation: CRL response body read failed url={} error={err}",
+            crl_url
+        );
+        ValidationError::CrlUnavailable
+    })?;
 
     info!(
         "certificate_validation: downloaded CRL url={} bytes={}",
@@ -238,4 +218,36 @@ fn download_crl_der(crl_url: &Url) -> Result<Vec<u8>, ValidationError> {
     );
 
     Ok(bytes.to_vec())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AllowAnyExtendedKeyUsage;
+
+impl ExtendedKeyUsageValidator for AllowAnyExtendedKeyUsage {
+    fn validate(&self, iter: KeyPurposeIdIter<'_, '_>) -> Result<(), WebPkiError> {
+        for eku in iter {
+            eku?;
+        }
+        Ok(())
+    }
+}
+
+fn map_webpki_error_to_validation_error(err: WebPkiError) -> ValidationError {
+    match err {
+        WebPkiError::CertRevoked => {
+            warn!("certificate_validation: revocation check failed error={err}");
+            ValidationError::Revoked
+        }
+        WebPkiError::CertExpired { .. }
+        | WebPkiError::CertNotValidYet { .. }
+        | WebPkiError::InvalidCertValidity => ValidationError::Expired,
+        WebPkiError::UnknownRevocationStatus => ValidationError::CrlUnavailable,
+        WebPkiError::BadDer
+        | WebPkiError::BadDerTime
+        | WebPkiError::TrailingData(_)
+        | WebPkiError::InvalidSerialNumber
+        | WebPkiError::MalformedExtensions
+        | WebPkiError::ExtensionValueInvalid => ValidationError::CertificateParse(err.to_string()),
+        _ => ValidationError::InvalidChain,
+    }
 }

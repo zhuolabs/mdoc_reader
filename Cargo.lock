@@ -1809,6 +1809,8 @@ version = "0.1.0"
 dependencies = [
  "log",
  "reqwest",
+ "rustls-pki-types",
+ "rustls-webpki",
  "thiserror 1.0.69",
  "time",
  "url",
