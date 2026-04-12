@@ -1747,14 +1747,28 @@ dependencies = [
  "mdoc-core",
  "mdoc-data-retrieval-flow",
  "mdoc-data-retrieval-flow-nfc-ble",
+ "mdoc-security",
  "mdoc-transport-ble-winrt",
  "mdoc-ui-cli",
- "mdoc-validation",
  "nfc-reader-pcsc",
  "serde_json",
  "tokio",
  "uuid",
  "x509-cert",
+]
+
+[[package]]
+name = "mdoc-security"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "reqwest",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "thiserror 1.0.69",
+ "time",
+ "url",
+ "x509-parser",
 ]
 
 [[package]]
@@ -1802,20 +1816,6 @@ dependencies = [
  "minicbor",
  "viuer",
  "x509-cert",
-]
-
-[[package]]
-name = "mdoc-validation"
-version = "0.1.0"
-dependencies = [
- "log",
- "reqwest",
- "rustls-pki-types",
- "rustls-webpki",
- "thiserror 1.0.69",
- "time",
- "url",
- "x509-parser",
 ]
 
 [[package]]

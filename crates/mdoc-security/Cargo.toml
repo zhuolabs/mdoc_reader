@@ -1,5 +1,5 @@
 [package]
-name = "mdoc-validation"
+name = "mdoc-security"
 version = "0.1.0"
 edition = "2021"
 

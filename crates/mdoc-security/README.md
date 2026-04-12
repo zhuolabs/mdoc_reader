@@ -1,8 +1,8 @@
-# mdoc-validation Crate
+# mdoc-security Crate
 
 ## Purpose
 
-`mdoc-validation` provides validation logic for:
+`mdoc-security` provides validation logic for:
 
 1. **Reader authentication certificate validation** aligned with ISO/IEC 18013-5 section 12.8.3.
 2. **MSO revocation checks** aligned with ISO/IEC 18013-5 section 12.3.6 (planned, not implemented yet).

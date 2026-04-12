@@ -10,7 +10,7 @@ mdoc-transport-ble-winrt = { path = "../mdoc-transport-ble-winrt" }
 mdoc-data-retrieval-flow = { path = "../mdoc-data-retrieval-flow" }
 mdoc-data-retrieval-flow-nfc-ble = { path = "../mdoc-data-retrieval-flow-nfc-ble" }
 mdoc-ui-cli = { path = "../mdoc-ui-cli" }
-mdoc-validation = { path = "../mdoc-validation" }
+mdoc-security = { path = "../mdoc-security" }
 anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt", "time"] }
 serde_json = "1"

@@ -292,11 +292,11 @@ async fn validate_certificate_chain_with_iaca(
                 .map_err(|err| format!("failed to encode x5chain certificate to DER: {err}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let crl_der = match mdoc_validation::extract_crl_distribution_point(iaca_cert_der) {
+    let crl_der = match mdoc_security::extract_crl_distribution_point(iaca_cert_der) {
         Ok(Some(crl_url)) => {
             info!("certificate_validation: CRL distribution point found url={crl_url}");
             Some(
-                mdoc_validation::download_crl_der(&crl_url)
+                mdoc_security::download_crl_der(&crl_url)
                     .await
                     .map_err(|err| err.to_string())?,
             )
@@ -308,7 +308,7 @@ async fn validate_certificate_chain_with_iaca(
         Err(err) => return Err(err.to_string()),
     };
 
-    mdoc_validation::validate_reader_auth_certificate(
+    mdoc_security::validate_reader_auth_certificate(
         iaca_cert_der,
         &chain_der,
         crl_der.as_deref(),
