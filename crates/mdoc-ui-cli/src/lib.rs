@@ -2,15 +2,13 @@ use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
-use log::debug;
+use log::info;
 use mdoc_core::{
-    DeviceResponse, ElementValue, FullDate, GetCosePayload, MobileSecurityObject, Status,
+    DeviceResponse, ElementValue, FullDate,
 };
 use mdoc_data_retrieval_flow::{DataRetrievalFlowEvent, EngagementMethod, TransportKind};
 use mdoc_ui::{FlowEventUi, MdocResultUi};
 use minicbor::bytes::ByteVec;
-use x509_cert::ext::pkix::name::{DistributionPointName, GeneralName};
-use x509_cert::ext::pkix::{CrlDistributionPoints, IssuerAltName};
 
 const PORTRAIT_WIDTH_CELLS: u32 = 30;
 
@@ -20,7 +18,7 @@ pub struct ConsoleDataRetrievalFlowObserver;
 impl mdoc_data_retrieval_flow::DataRetrievalFlowObserver for ConsoleDataRetrievalFlowObserver {
     fn on_event(&self, event: DataRetrievalFlowEvent) {
         let ui = ConsoleMdocUi;
-        let _ = ui.on_flow_event(event);
+        ui.on_flow_event(event).unwrap();
     }
 }
 
@@ -31,7 +29,6 @@ impl MdocResultUi<()> for ConsoleMdocUi {
     type Error = anyhow::Error;
 
     fn render_result(&mut self, response: &DeviceResponse, _validation: &()) -> Result<()> {
-        render_response_summary(response);
         print_issuer_signed_data(response)?;
         Ok(())
     }
@@ -94,14 +91,6 @@ pub fn render_device_response(response: &DeviceResponse) -> Result<()> {
     ui.render_result(response, &())
 }
 
-fn render_response_summary(response: &DeviceResponse) {
-    println!(
-        "[OK] Parsed DeviceResponse status={} documents={}",
-        response.status,
-        response.documents.as_ref().map_or(0, Vec::len)
-    );
-}
-
 pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
     let bytes = portrait
         .decode::<ByteVec>()
@@ -114,7 +103,7 @@ pub fn decode_portrait(bytes: &[u8]) -> Result<DynamicImage> {
     match decode_jpeg2000(bytes) {
         Ok(image) => Ok(image),
         Err(jpeg2000_err) => {
-            println!("[WARN] Failed to decode portrait as JPEG2000, trying JPEG...");
+            info!("[WARN] Failed to decode portrait as JPEG2000, trying JPEG...");
             decode_jpeg(bytes).with_context(|| {
                 format!(
                     "failed to decode portrait as JPEG (after JPEG2000 failed: {jpeg2000_err:#})"
@@ -158,45 +147,22 @@ pub fn print_portrait(image: &DynamicImage) -> Result<()> {
 
 fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     let Some(documents) = &response.documents else {
-        println!("[INFO] No documents in DeviceResponse");
+        info!("No documents in DeviceResponse");
         return Ok(());
     };
 
-    for (doc_idx, doc) in documents.iter().enumerate() {
-        println!("[INFO] Document[{doc_idx}] docType={}", doc.doc_type);
-        log_issuer_auth_payload(
-            doc_idx,
-            doc.issuer_signed
-                .issuer_auth
-                .payload()
-                .map(|cbor| cbor.raw_cbor_bytes()),
-        );
-        print_mso_status(doc)?;
-        if let Some(x5chain) = doc.issuer_signed.issuer_auth.x5chain() {
-            println!("[INFO]   issuerAuth.x5chain certs={}", x5chain.len());
-
-            if let Some(document_signer_cert) = x5chain.first() {
-                println!("[INFO]   issuerAuth.x5chain[0] role=document-signer");
-                print_x509_certificate_info(document_signer_cert);
-            }
-
-            for (idx, cert) in x5chain.get(1..).unwrap_or(&[]).iter().enumerate() {
-                println!("[INFO]   issuerAuth.x5chain[{}] role=intermediate", idx + 1);
-                print_x509_certificate_info(cert);
-            }
-        }
-
+    for doc in documents.iter() {
         let Some(name_spaces) = &doc.issuer_signed.name_spaces else {
-            println!("[INFO]   issuerSigned.nameSpaces is absent");
+            info!("issuerSigned.nameSpaces is absent");
             continue;
         };
 
         for (ns, items) in name_spaces {
-            println!("[INFO]   nameSpace={ns}");
+            println!("nameSpace={ns}");
             for item in items {
                 let item = item.decode()?;
                 println!(
-                    "[INFO]     {} = {}",
+                    " {} = {}",
                     item.element_identifier,
                     format_element_value(&item.element_value)
                 );
@@ -209,79 +175,6 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn print_mso_status(doc: &mdoc_core::MdocDocument) -> Result<()> {
-    let mso_bytes = doc
-        .issuer_signed
-        .issuer_auth
-        .payload()
-        .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?
-        .decode()
-        .context("failed to decode issuerAuth payload as tagged MobileSecurityObject bytes")?;
-    let mso: MobileSecurityObject = mso_bytes
-        .decode()
-        .context("failed to decode MobileSecurityObject from issuerAuth payload")?;
-
-    match &mso.status {
-        Some(status) => log_status(status),
-        None => debug!("mso.status=none"),
-    }
-
-    Ok(())
-}
-
-fn log_status(status: &Status) {
-    debug!("mso.status=present");
-
-    match &status.identifier_list {
-        Some(identifier_list) => {
-            debug!(
-                "mso.status.identifier_list.id={}",
-                encode_hex(identifier_list.id.as_slice())
-            );
-            debug!("mso.status.identifier_list.uri={}", identifier_list.uri);
-            match &identifier_list.certificate {
-                Some(certificate) => debug!(
-                    "mso.status.identifier_list.certificate=bytes(len={})",
-                    certificate.len()
-                ),
-                None => debug!("mso.status.identifier_list.certificate=none"),
-            }
-        }
-        None => debug!("mso.status.identifier_list=none"),
-    }
-
-    match &status.status_list {
-        Some(status_list) => {
-            debug!("mso.status.status_list.idx={}", status_list.idx);
-            debug!("mso.status.status_list.uri={}", status_list.uri);
-            match &status_list.certificate {
-                Some(certificate) => debug!(
-                    "mso.status.status_list.certificate=bytes(len={})",
-                    certificate.len()
-                ),
-                None => debug!("mso.status.status_list.certificate=none"),
-            }
-        }
-        None => debug!("mso.status.status_list=none"),
-    }
-}
-
-fn log_issuer_auth_payload(doc_idx: usize, payload: Option<&[u8]>) {
-    match payload {
-        Some(payload) => {
-            debug!(
-                "issuerAuth.payload doc={} len={} hex={}",
-                doc_idx,
-                payload.len(),
-                encode_hex(payload)
-            );
-        }
-        None => {
-            debug!("issuerAuth.payload doc={} null", doc_idx);
-        }
-    }
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -313,102 +206,4 @@ fn format_element_value(value: &ElementValue) -> String {
     }
 
     format!("cbor({:02X?})", value.raw_cbor_bytes())
-}
-
-fn print_x509_certificate_info(cert: &x509_cert::Certificate) {
-    let tbs = &cert.tbs_certificate;
-
-    println!("[INFO]     x509.version={:?}", tbs.version);
-    println!("[INFO]     x509.serial_number={}", tbs.serial_number);
-    println!("[INFO]     x509.issuer={}", tbs.issuer);
-    println!("[INFO]     x509.subject={}", tbs.subject);
-    println!(
-        "[INFO]     x509.validity.not_before={}",
-        tbs.validity.not_before
-    );
-    println!(
-        "[INFO]     x509.validity.not_after={}",
-        tbs.validity.not_after
-    );
-
-    match tbs.get::<IssuerAltName>() {
-        Ok(Some((critical, issuer_alt_name))) => {
-            println!("[INFO]     x509.issuer_alt_name.critical={critical}");
-            for (idx, name) in issuer_alt_name.0.iter().enumerate() {
-                println!(
-                    "[INFO]       x509.issuer_alt_name[{idx}]={}",
-                    format_general_name(name)
-                );
-            }
-        }
-        Ok(None) => {
-            println!("[INFO]     x509.issuer_alt_name=none");
-        }
-        Err(err) => {
-            println!("[WARN]     x509.issuer_alt_name decode failed: {err}");
-        }
-    }
-
-    match tbs.get::<CrlDistributionPoints>() {
-        Ok(Some((critical, crl_dp))) => {
-            println!("[INFO]     x509.crl_distribution_points.critical={critical}");
-            for (idx, dp) in crl_dp.0.iter().enumerate() {
-                match &dp.distribution_point {
-                    Some(DistributionPointName::FullName(names)) => {
-                        for (name_idx, name) in names.iter().enumerate() {
-                            println!(
-                                "[INFO]       x509.crl_distribution_points[{idx}].full_name[{name_idx}]={}",
-                                format_general_name(name)
-                            );
-                        }
-                    }
-                    Some(DistributionPointName::NameRelativeToCRLIssuer(rdn)) => {
-                        println!(
-                            "[INFO]       x509.crl_distribution_points[{idx}].name_relative_to_crl_issuer={rdn:?}"
-                        );
-                    }
-                    None => {
-                        println!(
-                            "[INFO]       x509.crl_distribution_points[{idx}].distribution_point=none"
-                        );
-                    }
-                }
-
-                if let Some(reasons) = &dp.reasons {
-                    println!(
-                        "[INFO]       x509.crl_distribution_points[{idx}].reasons={reasons:?}"
-                    );
-                }
-                if let Some(crl_issuer) = &dp.crl_issuer {
-                    for (issuer_idx, issuer_name) in crl_issuer.iter().enumerate() {
-                        println!(
-                            "[INFO]       x509.crl_distribution_points[{idx}].crl_issuer[{issuer_idx}]={}",
-                            format_general_name(issuer_name)
-                        );
-                    }
-                }
-            }
-        }
-        Ok(None) => {
-            println!("[INFO]     x509.crl_distribution_points=none");
-        }
-        Err(err) => {
-            println!("[WARN]     x509.crl_distribution_points decode failed: {err}");
-        }
-    }
-}
-
-fn format_general_name(name: &GeneralName) -> String {
-    match name {
-        GeneralName::OtherName(v) => {
-            format!("otherName(type_id={}, value={:?})", v.type_id, v.value)
-        }
-        GeneralName::Rfc822Name(v) => format!("rfc822Name({v})"),
-        GeneralName::DnsName(v) => format!("dNSName({v})"),
-        GeneralName::DirectoryName(v) => format!("directoryName({v})"),
-        GeneralName::EdiPartyName(v) => format!("ediPartyName({v:?})"),
-        GeneralName::UniformResourceIdentifier(v) => format!("uniformResourceIdentifier({v})"),
-        GeneralName::IpAddress(v) => format!("iPAddress({:02X?})", v.as_bytes()),
-        GeneralName::RegisteredId(v) => format!("registeredID({v})"),
-    }
 }

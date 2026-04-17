@@ -1,19 +1,26 @@
 # Config format (simple JSON -> DeviceRequest)
 
-`mdoc-reader-cli` app builds `DeviceRequest` from a JSON file that follows `DeviceRequest` / `ItemRequest` naming.
+`mdoc-reader-cli` builds `DeviceRequest` from a JSON file passed via `--request PATH`, using `DeviceRequest` / `ItemRequest` naming.
 
 ## JSON shape
 
 - `version: String` (optional, default is builder default)
+- `iacaCert: String` (optional)
 - `docRequests: [ ... ]` (required)
   - `itemsRequest` (required)
     - `docType: String` (required)
     - `nameSpaces: BTreeMap<String, BTreeMap<String, bool>>` (required)
 
+`iacaCert` accepts either:
+- an HTTPS URL
+- an absolute filesystem path
+- a relative filesystem path, resolved from the request JSON file location
+
 Example:
 
 ```json
 {
+  "iacaCert": "certs/iaca.pem",
   "docRequests": [
     {
       "itemsRequest": {

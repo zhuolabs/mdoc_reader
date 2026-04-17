@@ -8,12 +8,14 @@ Initialize the logger only at binary entry points (for example `crates/mdoc-read
 Examples:
 
 ```bash
-RUST_LOG=info cargo run -p mdoc-reader-cli -- --config request.example.json
+RUST_LOG=info cargo run -p mdoc-reader-cli -- --request request.example.json
 ```
 
 ```bash
-RUST_LOG=debug cargo run -p mdoc-reader-cli -- --config request.example.json
+RUST_LOG=debug cargo run -p mdoc-reader-cli -- --request request.example.json
 ```
+
+`mdoc-reader-cli` requires `--request PATH`. There is no embedded default request JSON.
 
 ## Windows BLE packet reordering workaround
 
