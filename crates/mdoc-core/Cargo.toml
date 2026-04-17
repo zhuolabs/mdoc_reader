@@ -14,11 +14,8 @@ ambassador = "0.5.0"
 ndef-rs = "0.2.3"
 p256 = { version = "0.13", features = ["ecdh"] }
 rand_core = "0.6"
-aes-gcm = "0.10"
 x509-cert = "0.2"
 chrono = { version = "0.4", default-features = true }
 
 [dev-dependencies]
-hex = "0.4"
 rcgen = "0.13"
-tokio = { version = "1", features = ["macros", "rt"] }

@@ -2,13 +2,14 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use mdoc_core::{
-    derive_session_key, derive_shared_secret, CoseKeyPrivate, CoseKeyPublic,
-    CoseVerifyDedicatedPayload, DeviceKeyInfo, DeviceNameSpaces, DeviceSigned, GetCosePayload,
-    KeyAuthorizations, SessionTranscript, TaggedCborBytes,
+    CoseKeyPrivate, CoseKeyPublic, CoseVerifyDedicatedPayload, DeviceKeyInfo, DeviceNameSpaces,
+    DeviceSigned, GetCosePayload, KeyAuthorizations, SessionTranscript, TaggedCborBytes,
 };
 use minicbor::{Decode, Encode};
 use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
+
+use crate::{derive_session_key, derive_shared_secret};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MdocDeviceAuthError {
