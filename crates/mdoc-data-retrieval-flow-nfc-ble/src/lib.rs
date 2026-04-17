@@ -6,13 +6,14 @@ use connection_handover::{
 };
 use mdoc_core::{
     ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
-    MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
-    SessionTranscript, TaggedCborBytes,
+    NFCHandover, ReaderEngagement, SessionData, SessionEstablishment, SessionTranscript,
+    TaggedCborBytes,
 };
 use mdoc_data_retrieval_flow::{
     DataRetrievalFlow, DataRetrievalFlowEvent, DataRetrievalFlowObserver, DataRetrievalResult,
     EngagementMethod, TransportKind,
 };
+use mdoc_security::{MdocRole, SessionEncryption};
 use mdoc_transport::{BleTransportParams, MdocTransport, MdocTransportConnector};
 use nfc_reader::NfcReader;
 use packet_reorder_workaround::try_decode_and_decrypt_session_data;

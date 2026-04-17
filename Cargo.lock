@@ -1691,11 +1691,9 @@ dependencies = [
 name = "mdoc-core"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "ambassador",
  "anyhow",
  "chrono",
- "hex",
  "hkdf",
  "hmac",
  "minicbor",
@@ -1704,7 +1702,6 @@ dependencies = [
  "rand_core 0.6.4",
  "rcgen",
  "sha2",
- "tokio",
  "uuid",
  "x509-cert",
 ]
@@ -1727,6 +1724,7 @@ dependencies = [
  "log",
  "mdoc-core",
  "mdoc-data-retrieval-flow",
+ "mdoc-security",
  "mdoc-transport",
  "minicbor",
  "nfc-reader",
@@ -1761,7 +1759,11 @@ dependencies = [
 name = "mdoc-security"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
+ "anyhow",
  "chrono",
+ "hex",
+ "hkdf",
  "hmac",
  "log",
  "mdoc-core",
@@ -1774,6 +1776,7 @@ dependencies = [
  "sha2",
  "thiserror 1.0.69",
  "time",
+ "tokio",
  "url",
  "x509-cert",
  "x509-parser",

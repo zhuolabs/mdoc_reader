@@ -9,7 +9,6 @@ mod device_response;
 mod ident;
 mod mobile_security_object;
 mod reader_engagement;
-mod session_encryption;
 mod session_messages;
 mod session_transcript;
 mod x5_chain;
@@ -43,9 +42,6 @@ pub use mobile_security_object::{
     ValueDigests, URI,
 };
 pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
-pub use session_encryption::{
-    derive_session_key, derive_session_keys, derive_shared_secret, MdocRole, SessionEncryption,
-};
 pub use session_messages::{SessionData, SessionEstablishment};
 pub use session_transcript::{NFCHandover, SessionTranscript};
 pub use x5_chain::X5Chain;

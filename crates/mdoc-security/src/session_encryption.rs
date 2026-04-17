@@ -2,13 +2,10 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::Result;
 use hkdf::Hkdf;
+use mdoc_core::{CoseKeyPrivate, CoseKeyPublic, SessionTranscript, TaggedCborBytes};
 use p256::ecdh::diffie_hellman;
 use p256::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
-
-use crate::cbor_bytes::TaggedCborBytes;
-use crate::cose_key::{CoseKeyPrivate, CoseKeyPublic};
-use crate::session_transcript::SessionTranscript;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MdocRole {
@@ -113,8 +110,8 @@ fn build_iv(iv_identifier: u32, counter: u32) -> [u8; 12] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoseKeyPrivate, CoseKeyPublic, SessionEstablishment, SessionTranscript};
     use hex::decode;
+    use mdoc_core::SessionEstablishment;
     use minicbor::bytes::ByteVec;
     use minicbor::Encoder;
 

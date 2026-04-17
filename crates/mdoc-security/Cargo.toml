@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 mdoc-core = { path = "../mdoc-core" }
+anyhow = "1"
+aes-gcm = "0.10"
+hkdf = "0.12"
 thiserror = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
 rustls-pki-types = "1"
@@ -21,4 +24,6 @@ p256 = { version = "0.13", features = ["ecdh"] }
 x509-cert = "0.2"
 
 [dev-dependencies]
+hex = "0.4"
 rcgen = "0.13"
+tokio = { version = "1", features = ["macros", "rt"] }
