@@ -5,8 +5,8 @@ use connection_handover::{
     CONNECTION_HANDOVER_SERVICE_NAME,
 };
 use mdoc_core::{
-    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, MdocRole,
-    NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
+    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
+    MdocRole, NFCHandover, ReaderEngagement, SessionData, SessionEncryption, SessionEstablishment,
     SessionTranscript, TaggedCborBytes,
 };
 use mdoc_data_retrieval_flow::{
@@ -144,14 +144,14 @@ where
     let e_device_key_bytes = device_engagement.e_device_key_bytes();
     let ident = ble_ident(e_device_key_bytes)?;
     let e_reader_key = e_reader_key_private.to_public();
-    let session_transcript = TaggedCborBytes::from(&SessionTranscript(
+    let session_transcript = SessionTranscript(
         Some(TaggedCborBytes::from(&device_engagement)),
         TaggedCborBytes::from(&e_reader_key),
         NFCHandover(
             (&handover_select_message).try_into()?,
             Some((&handover_request_message).try_into()?),
         ),
-    ));
+    );
 
     let mut transport = transport_factory
         .connect(BleTransportParams {
@@ -159,12 +159,13 @@ where
             ident,
         })
         .await?;
+
     notify_event(
         observer,
         DataRetrievalFlowEvent::TransportConnected(TransportKind::Ble),
     );
 
-    do_reader_flow_with_transport(
+    let device_response = do_reader_flow_with_transport(
         &mut transport,
         &e_device_key_bytes.decode()?,
         &session_transcript,
@@ -172,27 +173,34 @@ where
         device_request,
         observer,
     )
-    .await
+    .await?;
+
+    Ok(DataRetrievalResult {
+        device_response,
+        session_transcript,
+    })
 }
 
 async fn do_reader_flow_with_transport<T>(
     transport: &mut T,
     e_device_key: &CoseKeyPublic,
-    session_transcript: &TaggedCborBytes<SessionTranscript>,
+    session_transcript: &SessionTranscript,
     e_reader_key_private: &CoseKeyPrivate,
     device_request: &DeviceRequest,
     observer: Option<&dyn DataRetrievalFlowObserver>,
-) -> Result<DataRetrievalResult>
+) -> Result<DeviceResponse>
 where
     T: MdocTransport + ?Sized,
 {
     let e_reader_key_public = e_reader_key_private.to_public();
     let encoded_device_request = minicbor::to_vec(device_request)?;
+    let session_transcript_bytes = TaggedCborBytes::from(session_transcript);
+
     let session_encryption = SessionEncryption::new(
         MdocRole::Reader,
         e_reader_key_private,
         e_device_key,
-        session_transcript,
+        &session_transcript_bytes,
     )?;
     let encrypt_counter = 1u32;
     let encrypted_request =
@@ -225,10 +233,7 @@ where
         transport.send(&termination).await?;
     }
 
-    Ok(DataRetrievalResult {
-        device_response,
-        session_transcript: session_transcript.clone(),
-    })
+    Ok(device_response)
 }
 
 fn notify_event(observer: Option<&dyn DataRetrievalFlowObserver>, event: DataRetrievalFlowEvent) {

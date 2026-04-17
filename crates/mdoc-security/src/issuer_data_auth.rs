@@ -101,14 +101,6 @@ pub fn verify_issuer_data_auth(
     ctx: &IssuerDataAuthContext,
 ) -> Result<VerifiedMso, IssuerDataAuthError> {
     let issuer_auth = &doc.issuer_signed.issuer_auth;
-    let mso_bytes = issuer_auth
-        .payload()
-        .ok_or_else(|| IssuerDataAuthError::InvalidIssuerAuth("missing payload".into()))?
-        .decode()
-        .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?;
-    let mso = mso_bytes
-        .decode()
-        .map_err(|err| IssuerDataAuthError::InvalidMobileSecurityObject(err.to_string()))?;
 
     let issuer_cert = issuer_auth
         .x5chain()
@@ -119,6 +111,14 @@ pub fn verify_issuer_data_auth(
     issuer_auth
         .verify(issuer_cert, b"")
         .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?;
+
+    let mso = issuer_auth
+        .payload()
+        .ok_or_else(|| IssuerDataAuthError::InvalidIssuerAuth("missing payload".into()))?
+        .decode()
+        .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?
+        .decode()
+        .map_err(|err| IssuerDataAuthError::InvalidMobileSecurityObject(err.to_string()))?;
 
     verify_doc_type(&mso.doc_type, &doc.doc_type)?;
     if let Some(expected_doc_type) = &ctx.expected_doc_type {

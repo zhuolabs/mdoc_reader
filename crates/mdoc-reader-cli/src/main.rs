@@ -4,12 +4,11 @@ use chrono::Utc;
 use clap::Parser;
 use log::info;
 use mdoc_core::{
-    CoseKeyPrivate, CoseVerify, DeviceRequest, DeviceResponse, NameSpaces, SessionTranscript,
-    TaggedCborBytes,
+    CoseKeyPrivate, DeviceRequest, DeviceResponse, NameSpaces, SessionTranscript, TaggedCborBytes,
 };
 use mdoc_data_retrieval_flow::DataRetrievalFlow;
 use mdoc_data_retrieval_flow_nfc_ble::NfcBleDataRetrievalFlow;
-use mdoc_security::{IssuerDataAuthContext, MdocDeviceAuthContext, VerifiedMso};
+use mdoc_security::{IssuerDataAuthContext, VerifiedMso};
 use mdoc_transport_ble_winrt::WinRtBleMdocTransportFactory;
 use mdoc_ui_cli::{render_device_response, ConsoleDataRetrievalFlowObserver};
 use nfc_reader_pcsc::PcscReader;
@@ -50,7 +49,6 @@ struct DeviceResponseValidation {
 #[derive(Debug, Clone)]
 struct DocumentValidation {
     doc_type: String,
-    cose_sign1: Result<(), String>,
     issuer_data_auth: Result<VerifiedMso, String>,
     mdoc_device_auth: Result<(), String>,
     certificate_validation: Option<Result<(), String>>,
@@ -186,23 +184,13 @@ fn build_namespaces_from_json(items_request: &Value, idx: usize) -> anyhow::Resu
 async fn validate_device_response(
     response: &DeviceResponse,
     e_self_private_key: &CoseKeyPrivate,
-    session_transcript: &TaggedCborBytes<SessionTranscript>,
+    session_transcript: &SessionTranscript,
     iaca_cert_der: Option<&[u8]>,
 ) -> DeviceResponseValidation {
     let mut documents = Vec::new();
 
     if let Some(response_documents) = response.documents.as_ref() {
         for doc in response_documents {
-            let issuer_cert = doc
-                .issuer_signed
-                .issuer_auth
-                .x5chain()
-                .and_then(|chain| chain.first())
-                .cloned()
-                .ok_or_else(|| {
-                    "issuerAuth did not contain a document signer certificate".to_string()
-                });
-
             let certificate_validation = match iaca_cert_der {
                 Some(der) => Some(
                     validate_certificate_chain_with_iaca(&doc.issuer_signed.issuer_auth, der).await,
@@ -210,61 +198,39 @@ async fn validate_device_response(
                 None => None,
             };
 
-            let cose_sign1 = issuer_cert.as_ref().map_or_else(
-                |err| Err(err.clone()),
-                |cert| {
-                    doc.issuer_signed
-                        .issuer_auth
-                        .verify(cert, b"")
-                        .map_err(|err| err.to_string())
-                },
-            );
-
             let issuer_data_auth = mdoc_security::verify_issuer_data_auth(
                 doc,
                 &IssuerDataAuthContext {
                     now: Utc::now(),
                     expected_doc_type: Some(doc.doc_type.clone()),
                 },
-            );
-            let mdoc_device_auth = match &issuer_data_auth {
-                Ok(verified_mso) => match (
-                    doc.device_signed.device_auth.device_signature.as_ref(),
-                    doc.device_signed.device_auth.device_mac.as_ref(),
-                ) {
-                    (Some(_), None) => mdoc_security::verify_mdoc_device_auth(
-                        doc,
-                        &MdocDeviceAuthContext {
-                            session_transcript: session_transcript.clone(),
-                            verified_mso: verified_mso.clone(),
-                        },
-                    )
-                    .map_err(|err| err.to_string()),
-                    (None, Some(_)) => mdoc_security::verify_mdoc_mac_auth(
-                        doc,
-                        e_self_private_key,
-                        &MdocDeviceAuthContext {
-                            session_transcript: session_transcript.clone(),
-                            verified_mso: verified_mso.clone(),
-                        },
-                    )
-                    .map_err(|err| err.to_string()),
-                    _ => mdoc_security::verify_mdoc_device_auth(
-                        doc,
-                        &MdocDeviceAuthContext {
-                            session_transcript: session_transcript.clone(),
-                            verified_mso: verified_mso.clone(),
-                        },
-                    )
-                    .map_err(|err| err.to_string()),
-                },
-                Err(err) => Err(err.to_string()),
+            )
+            .map_err(|err| err.to_string());
+
+            let mso = match &issuer_data_auth {
+                Ok(verified) => &verified.mso,
+                Err(err) => {
+                    documents.push(DocumentValidation {
+                        doc_type: doc.doc_type.clone(),
+                        issuer_data_auth: Err(err.to_string()),
+                        mdoc_device_auth: Err("skipped due to issuer_data_auth failure".to_string()),
+                        certificate_validation: certificate_validation.clone(),
+                    });
+                    continue;
+                }
             };
-            let issuer_data_auth = issuer_data_auth.map_err(|err| err.to_string());
+
+            let mdoc_device_auth = mdoc_security::verify_mdoc_device_auth(
+                &doc.device_signed,
+                &mso.device_key_info,
+                e_self_private_key,
+                session_transcript,
+                &doc.doc_type,
+            )
+            .map_err(|err| format!("failed to decode session transcript: {err}"));
 
             documents.push(DocumentValidation {
                 doc_type: doc.doc_type.clone(),
-                cose_sign1,
                 issuer_data_auth,
                 mdoc_device_auth,
                 certificate_validation,
@@ -322,17 +288,6 @@ fn print_validation_summary(validation: &DeviceResponseValidation) {
     }
 
     for (idx, doc) in validation.documents.iter().enumerate() {
-        match &doc.cose_sign1 {
-            Ok(()) => println!(
-                "[OK] Document[{idx}] COSE_Sign1 verified docType={}",
-                doc.doc_type
-            ),
-            Err(err) => println!(
-                "[ERR] Document[{idx}] COSE_Sign1 verification failed docType={} error={err}",
-                doc.doc_type
-            ),
-        }
-
         match &doc.issuer_data_auth {
             Ok(verified) => println!(
                 "[OK] Document[{idx}] issuer_data_auth verified docType={} mso.docType={}",

@@ -11,7 +11,4 @@ pub use error::ValidationError;
 pub use issuer_data_auth::{
     verify_issuer_data_auth, IssuerDataAuthContext, IssuerDataAuthError, VerifiedMso,
 };
-pub use mdoc_device_auth::{
-    verify_mdoc_device_auth, verify_mdoc_mac_auth, MdocDeviceAuthContext, MdocDeviceAuthError,
-    MdocMacAuthError,
-};
+pub use mdoc_device_auth::{verify_mdoc_device_auth, MdocDeviceAuthError, MdocMacAuthError};
