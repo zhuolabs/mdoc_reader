@@ -9,7 +9,7 @@ use minicbor::{Decode, Encode};
 use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 
-use crate::{derive_session_key, derive_shared_secret};
+use crate::{derive_shared_key, derive_shared_secret};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MdocDeviceAuthError {
@@ -140,7 +140,7 @@ fn derive_emac_key(
 
     let salt = Sha256::digest(data);
 
-    derive_session_key(&shared_secret, &salt, b"EMacKey")
+    derive_shared_key(&shared_secret, &salt, b"EMacKey")
         .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))
 }
 

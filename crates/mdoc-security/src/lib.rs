@@ -14,5 +14,5 @@ pub use issuer_data_auth::{
 };
 pub use mdoc_device_auth::{verify_mdoc_device_auth, MdocDeviceAuthError, MdocMacAuthError};
 pub use session_encryption::{
-    derive_session_key, derive_session_keys, derive_shared_secret, MdocRole, SessionEncryption,
+    derive_shared_key, derive_shared_secret, MdocRole, SessionEncryption,
 };

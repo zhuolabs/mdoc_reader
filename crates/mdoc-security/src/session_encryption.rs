@@ -69,6 +69,14 @@ impl SessionEncryption {
     }
 }
 
+pub fn derive_shared_key(shared_secret: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32]> {
+    let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret);
+    let mut output = [0u8; 32];
+    hkdf.expand(info, &mut output)
+        .map_err(|_| anyhow::anyhow!("HKDF key derivation failed"))?;
+    Ok(output)
+}
+
 pub fn derive_shared_secret(
     e_self_private_key: &CoseKeyPrivate,
     remote_public_key: &CoseKeyPublic,
@@ -82,22 +90,14 @@ pub fn derive_shared_secret(
     Ok((*shared_secret.raw_secret_bytes()).into())
 }
 
-pub fn derive_session_keys(
+fn derive_session_keys(
     shared_secret: &[u8; 32],
     session_transcript: &TaggedCborBytes<SessionTranscript>,
 ) -> Result<([u8; 32], [u8; 32])> {
     let salt = Sha256::digest(minicbor::to_vec(session_transcript)?);
-    let sk_device = derive_session_key(shared_secret, &salt, b"SKDevice")?;
-    let sk_reader = derive_session_key(shared_secret, &salt, b"SKReader")?;
+    let sk_device = derive_shared_key(shared_secret, &salt, b"SKDevice")?;
+    let sk_reader = derive_shared_key(shared_secret, &salt, b"SKReader")?;
     Ok((sk_device, sk_reader))
-}
-
-pub fn derive_session_key(shared_secret: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32]> {
-    let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret);
-    let mut output = [0u8; 32];
-    hkdf.expand(info, &mut output)
-        .map_err(|_| anyhow::anyhow!("HKDF key derivation failed"))?;
-    Ok(output)
 }
 
 fn build_iv(iv_identifier: u32, counter: u32) -> [u8; 12] {

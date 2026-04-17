@@ -1694,6 +1694,7 @@ dependencies = [
  "ambassador",
  "anyhow",
  "chrono",
+ "hex",
  "hkdf",
  "hmac",
  "minicbor",
