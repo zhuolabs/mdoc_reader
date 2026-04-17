@@ -196,12 +196,11 @@ async fn validate_device_response(
             let issuer_cert = doc
                 .issuer_signed
                 .issuer_auth
-                .document_signer_cert()
-                .map_err(|err| err.to_string())
-                .and_then(|cert| {
-                    cert.cloned().ok_or_else(|| {
-                        "issuerAuth did not contain a document signer certificate".to_string()
-                    })
+                .x5chain()
+                .and_then(|chain| chain.first())
+                .cloned()
+                .ok_or_else(|| {
+                    "issuerAuth did not contain a document signer certificate".to_string()
                 });
 
             let certificate_validation = match iaca_cert_der {
@@ -281,12 +280,9 @@ async fn validate_certificate_chain_with_iaca(
     iaca_cert_der: &[u8],
 ) -> Result<(), String> {
     let x5chain = issuer_auth
-        .unprotected
-        .x5chain
-        .as_ref()
+        .x5chain()
         .ok_or_else(|| "issuerAuth x5chain is missing".to_string())?;
     let chain_der = x5chain
-        .as_slice()
         .iter()
         .map(|cert| {
             cert.to_der()

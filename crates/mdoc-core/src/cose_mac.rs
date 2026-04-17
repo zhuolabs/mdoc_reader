@@ -4,7 +4,8 @@ use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
 use sha2::Sha256;
 
-use crate::{CborAny, CborBytes, CoseAlg, CoseVerify, GetCoseAlg, HeaderMap, ProtectedHeaderMap};
+use crate::cose_sign::{CoseVerifyDedicatedPayload, GetCosePayload};
+use crate::{CborAny, CborBytes, CoseAlg, GetCoseAlg, HeaderMap, ProtectedHeaderMap};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -17,26 +18,26 @@ where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
     #[n(0)]
-    pub protected: ProtectedHeaderMap,
+    protected: ProtectedHeaderMap,
     #[n(1)]
-    pub unprotected: HeaderMap,
+    unprotected: HeaderMap,
     #[n(2)]
-    pub payload: Option<CborBytes<T>>,
+    payload: Option<CborBytes<T>>,
     #[n(3)]
-    pub tag: ByteVec,
+    tag: ByteVec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
-pub struct MacStructure {
+struct MacStructure {
     #[n(0)]
-    pub context: String,
+    context: String,
     #[n(1)]
-    pub body_protected: ByteVec,
+    body_protected: ByteVec,
     #[n(2)]
-    pub external_aad: ByteVec,
+    external_aad: ByteVec,
     #[n(3)]
-    pub payload: ByteVec,
+    payload: ByteVec,
 }
 
 impl<T> GetCoseAlg for CoseMac0<T>
@@ -52,20 +53,29 @@ where
     }
 }
 
-impl<T> CoseVerify<[u8; 32]> for CoseMac0<T>
+impl<T> GetCosePayload for CoseMac0<T>
 where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
-    fn verify(&self, key: &[u8; 32], external_aad: &[u8]) -> Result<()> {
-        let payload = self.payload.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("COSE_Mac0 payload is missing"))?;
+    type Payload = T;
+
+    fn payload(&self) -> Option<&CborBytes<Self::Payload>> {
+        self.payload.as_ref()
+    }
+}
+
+impl<T> CoseVerifyDedicatedPayload<[u8; 32]> for CoseMac0<T>
+where
+    T: Encode<()> + for<'a> Decode<'a, ()>,
+{
+    fn verify_with(&self, key: &[u8; 32], external_aad: &[u8], payload: &[u8]) -> Result<()> {
         match self.alg()? {
             CoseAlg::HMAC256256 => {
                 let mac_structure = minicbor::to_vec(MacStructure {
                     context: MAC0_CONTEXT.to_string(),
                     body_protected: ByteVec::from(self.protected.raw_cbor_bytes().to_vec()),
                     external_aad: ByteVec::from(external_aad.to_vec()),
-                    payload: ByteVec::from(payload.raw_cbor_bytes().to_vec()),
+                    payload: ByteVec::from(payload.to_vec()),
                 })?;
                 let mut hmac = HmacSha256::new_from_slice(key)
                     .map_err(|_| anyhow::anyhow!("invalid HMAC key bytes"))?;

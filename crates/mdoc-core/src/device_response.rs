@@ -97,6 +97,7 @@ cbor_string_map_struct! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{CborAny, CborBytes, CoseAlg, HeaderMap, ProtectedHeaderMap};
     use minicbor::Encoder;
 
     #[test]
@@ -191,24 +192,6 @@ mod tests {
         })
     }
 
-    fn dummy_cose_sign1() -> CoseSign1<TaggedCborBytes<MobileSecurityObject>> {
-        CoseSign1 {
-            protected: crate::ProtectedHeaderMap::from(&crate::HeaderMap::default()),
-            unprotected: crate::HeaderMap::default(),
-            payload: None,
-            signature: ByteVec::from(vec![0u8; 64]),
-        }
-    }
-
-    fn dummy_untyped_cose_sign1() -> CoseSign1 {
-        CoseSign1 {
-            protected: crate::ProtectedHeaderMap::from(&crate::HeaderMap::default()),
-            unprotected: crate::HeaderMap::default(),
-            payload: None,
-            signature: ByteVec::from(vec![0u8; 64]),
-        }
-    }
-
     fn string_value(value: &str) -> ElementValue {
         encode_element_value(value)
     }
@@ -246,6 +229,47 @@ mod tests {
             let decoded = item.decode().ok()?;
             (decoded.element_identifier == key).then_some(decoded.element_value)
         })
+    }
+
+    fn dummy_cose_sign1() -> CoseSign1<TaggedCborBytes<MobileSecurityObject>> {
+        CoseSign1::new(
+            ProtectedHeaderMap::from(&HeaderMap {
+                alg: Some(CoseAlg::ES256),
+                x5chain: None,
+            }),
+            HeaderMap::default(),
+            Some(CborBytes::from(&TaggedCborBytes::from(&MobileSecurityObject {
+                version: "1.0".to_string(),
+                digest_algorithm: "SHA-256".to_string(),
+                value_digests: BTreeMap::new(),
+                device_key_info: crate::DeviceKeyInfo {
+                    device_key: crate::CoseKeyPrivate::new().unwrap().to_public(),
+                    key_authorizations: None,
+                    key_info: None,
+                },
+                doc_type: "org.iso.18013.5.1.mDL".to_string(),
+                validity_info: crate::ValidityInfo {
+                    signed: crate::TDate::from("2026-01-01T00:00:00Z".to_string()),
+                    valid_from: crate::TDate::from("2026-01-01T00:00:00Z".to_string()),
+                    valid_until: crate::TDate::from("2027-01-01T00:00:00Z".to_string()),
+                    expected_update: None,
+                },
+                status: None,
+            }))),
+            ByteVec::from(vec![0; 64]),
+        )
+    }
+
+    fn dummy_untyped_cose_sign1() -> CoseSign1<CborAny> {
+        CoseSign1::new(
+            ProtectedHeaderMap::from(&HeaderMap {
+                alg: Some(CoseAlg::ES256),
+                x5chain: None,
+            }),
+            HeaderMap::default(),
+            Some(CborBytes::from_raw_bytes(vec![0xF6])),
+            ByteVec::from(vec![0; 64]),
+        )
     }
 
     #[test]

@@ -4,8 +4,7 @@ use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
 use log::debug;
 use mdoc_core::{
-    DeviceResponse, ElementValue, FullDate, MobileSecurityObject,
-    Status,
+    DeviceResponse, ElementValue, FullDate, GetCosePayload, MobileSecurityObject, Status,
 };
 use mdoc_data_retrieval_flow::{DataRetrievalFlowEvent, EngagementMethod, TransportKind};
 use mdoc_ui::{FlowEventUi, MdocResultUi};
@@ -167,35 +166,21 @@ fn print_issuer_signed_data(response: &DeviceResponse) -> Result<()> {
         println!("[INFO] Document[{doc_idx}] docType={}", doc.doc_type);
         log_issuer_auth_payload(
             doc_idx,
-            Some(doc.issuer_signed
+            doc.issuer_signed
                 .issuer_auth
-                .payload.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?
-                .raw_cbor_bytes()
-        ),
+                .payload()
+                .map(|cbor| cbor.raw_cbor_bytes()),
         );
         print_mso_status(doc)?;
-        if let Some(x5chain) = &doc.issuer_signed.issuer_auth.unprotected.x5chain {
+        if let Some(x5chain) = doc.issuer_signed.issuer_auth.x5chain() {
             println!("[INFO]   issuerAuth.x5chain certs={}", x5chain.len());
 
-            if let Some(document_signer_cert) = doc
-                .issuer_signed
-                .issuer_auth
-                .unprotected
-                .document_signer_cert()
-            {
+            if let Some(document_signer_cert) = x5chain.first() {
                 println!("[INFO]   issuerAuth.x5chain[0] role=document-signer");
                 print_x509_certificate_info(document_signer_cert);
             }
 
-            for (idx, cert) in doc
-                .issuer_signed
-                .issuer_auth
-                .unprotected
-                .intermediate_certs()
-                .iter()
-                .enumerate()
-            {
+            for (idx, cert) in x5chain.get(1..).unwrap_or(&[]).iter().enumerate() {
                 println!("[INFO]   issuerAuth.x5chain[{}] role=intermediate", idx + 1);
                 print_x509_certificate_info(cert);
             }
@@ -230,7 +215,7 @@ fn print_mso_status(doc: &mdoc_core::MdocDocument) -> Result<()> {
     let mso_bytes = doc
         .issuer_signed
         .issuer_auth
-        .payload.as_ref()
+        .payload()
         .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?
         .decode()
         .context("failed to decode issuerAuth payload as tagged MobileSecurityObject bytes")?;

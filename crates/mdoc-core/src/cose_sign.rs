@@ -13,26 +13,26 @@ where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
     #[n(0)]
-    pub protected: CborBytes<HeaderMap>,
+    protected: CborBytes<HeaderMap>,
     #[n(1)]
-    pub unprotected: HeaderMap,
+    unprotected: HeaderMap,
     #[n(2)]
-    pub payload: Option<CborBytes<T>>,
+    payload: Option<CborBytes<T>>,
     #[n(3)]
-    pub signature: ByteVec,
+    signature: ByteVec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Decode, Encode)]
 #[cbor(array)]
 struct SigStructureSignature1 {
     #[n(0)]
-    pub context: String,
+    context: String,
     #[n(1)]
-    pub body_protected: ByteVec,
+    body_protected: ByteVec,
     #[n(2)]
-    pub external_aad: ByteVec,
+    external_aad: ByteVec,
     #[n(3)]
-    pub payload: ByteVec,
+    payload: ByteVec,
 }
 
 #[derive(Debug, Clone, Decode, PartialEq, Eq, Encode, Default)]
@@ -45,21 +45,6 @@ pub struct HeaderMap {
 }
 
 pub type ProtectedHeaderMap = CborBytes<HeaderMap>;
-
-impl HeaderMap {
-    pub fn document_signer_cert(&self) -> Option<&x509_cert::Certificate> {
-        self.x5chain
-            .as_ref()
-            .and_then(|chain| chain.as_slice().first())
-    }
-
-    pub fn intermediate_certs(&self) -> &[x509_cert::Certificate] {
-        self.x5chain
-            .as_deref()
-            .map(|chain| chain.get(1..).unwrap_or(&[]))
-            .unwrap_or(&[])
-    }
-}
 
 #[derive(Decode, Debug, Encode, PartialEq, Eq, Copy, Clone)]
 #[cbor(index_only)]
@@ -89,8 +74,31 @@ pub trait GetCoseAlg {
     fn alg(&self) -> Result<CoseAlg>;
 }
 
+pub trait GetCosePayload {
+    type Payload: Encode<()> + for<'a> Decode<'a, ()>;
+
+    fn payload(&self) -> Option<&CborBytes<Self::Payload>>;
+}
+
 pub trait CoseVerify<K> {
     fn verify(&self, key: &K, external_aad: &[u8]) -> Result<()>;
+}
+
+impl<K, T> CoseVerify<K> for T
+where
+    T: CoseVerifyDedicatedPayload<K> + GetCosePayload,
+{
+    fn verify(&self, key: &K, external_aad: &[u8]) -> Result<()> {
+        let payload = self
+            .payload()
+            .ok_or_else(|| anyhow::anyhow!("COSE payload is missing"))?
+            .raw_cbor_bytes();
+        self.verify_with(key, external_aad, payload)
+    }
+}
+
+pub trait CoseVerifyDedicatedPayload<K> {
+    fn verify_with(&self, key: &K, external_aad: &[u8], payload: &[u8]) -> Result<()>;
 }
 
 impl<T> GetCoseAlg for CoseSign1<T>
@@ -106,20 +114,29 @@ where
     }
 }
 
-impl<T> CoseVerify<VerifyingKey> for CoseSign1<T>
+impl<T> GetCosePayload for CoseSign1<T>
 where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
-    fn verify(&self, key: &VerifyingKey, external_aad: &[u8]) -> Result<()> {
-        let payload = self.payload.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("COSE_Sign1 payload is missing"))?;
+    type Payload = T;
+
+    fn payload(&self) -> Option<&CborBytes<Self::Payload>> {
+        self.payload.as_ref()
+    }
+}
+
+impl<T> CoseVerifyDedicatedPayload<VerifyingKey> for CoseSign1<T>
+where
+    T: Encode<()> + for<'a> Decode<'a, ()>,
+{
+    fn verify_with(&self, key: &VerifyingKey, external_aad: &[u8], payload: &[u8]) -> Result<()> {
         match self.alg()? {
             CoseAlg::ES256 | CoseAlg::ES256P256 => {
                 let sig_structure = minicbor::to_vec(SigStructureSignature1 {
                     context: "Signature1".to_string(),
                     body_protected: ByteVec::from(self.protected.raw_cbor_bytes().to_vec()),
                     external_aad: ByteVec::from(external_aad.to_vec()),
-                    payload: ByteVec::from(payload.raw_cbor_bytes().to_vec()),
+                    payload: ByteVec::from(payload.to_vec()),
                 })?;
                 let signature = p256::ecdsa::Signature::from_slice(self.signature.as_slice())
                     .map_err(|_| anyhow::anyhow!("invalid ES256 signature bytes"))?;
@@ -131,11 +148,16 @@ where
     }
 }
 
-impl<T> CoseVerify<x509_cert::Certificate> for CoseSign1<T>
+impl<T> CoseVerifyDedicatedPayload<x509_cert::Certificate> for CoseSign1<T>
 where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
-    fn verify(&self, certificate: &x509_cert::Certificate, external_aad: &[u8]) -> Result<()> {
+    fn verify_with(
+        &self,
+        certificate: &x509_cert::Certificate,
+        external_aad: &[u8],
+        payload: &[u8],
+    ) -> Result<()> {
         let sec1_bytes = certificate
             .tbs_certificate
             .subject_public_key_info
@@ -144,7 +166,7 @@ where
             .ok_or_else(|| anyhow::anyhow!("certificate public key is not byte-aligned"))?;
         let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(sec1_bytes)
             .map_err(|_| anyhow::anyhow!("certificate public key is not a valid P-256 key"))?;
-        self.verify(&verifying_key, external_aad)
+        self.verify_with(&verifying_key, external_aad, payload)
     }
 }
 
@@ -152,8 +174,22 @@ impl<T> CoseSign1<T>
 where
     T: Encode<()> + for<'a> Decode<'a, ()>,
 {
-    pub fn document_signer_cert(&self) -> Result<Option<&x509_cert::Certificate>> {
-        Ok(self.unprotected.document_signer_cert())
+    pub fn new(
+        protected: ProtectedHeaderMap,
+        unprotected: HeaderMap,
+        payload: Option<CborBytes<T>>,
+        signature: ByteVec,
+    ) -> Self {
+        Self {
+            protected,
+            unprotected,
+            payload,
+            signature,
+        }
+    }
+
+    pub fn x5chain(&self) -> Option<&[x509_cert::Certificate]> {
+        self.unprotected.x5chain.as_ref().map(|v| v.as_slice())
     }
 }
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
-use mdoc_core::{CoseVerify};
+use mdoc_core::{CoseVerify, GetCosePayload};
 use mdoc_core::{MdocDocument, MobileSecurityObject};
 use sha2::{Digest, Sha256};
 
@@ -102,7 +102,7 @@ pub fn verify_issuer_data_auth(
 ) -> Result<VerifiedMso, IssuerDataAuthError> {
     let issuer_auth = &doc.issuer_signed.issuer_auth;
     let mso_bytes = issuer_auth
-        .payload.as_ref()
+        .payload()
         .ok_or_else(|| IssuerDataAuthError::InvalidIssuerAuth("missing payload".into()))?
         .decode()
         .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?;
@@ -111,13 +111,13 @@ pub fn verify_issuer_data_auth(
         .map_err(|err| IssuerDataAuthError::InvalidMobileSecurityObject(err.to_string()))?;
 
     let issuer_cert = issuer_auth
-        .document_signer_cert()
-        .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?
-        .cloned()
-        .ok_or(IssuerDataAuthError::MissingIssuerCertificate)?;
+        .x5chain()
+        .ok_or_else(|| IssuerDataAuthError::InvalidIssuerAuth("missing x5chain".into()))?
+        .first()
+        .ok_or_else(|| IssuerDataAuthError::MissingIssuerCertificate)?;
 
     issuer_auth
-        .verify(&issuer_cert, b"")
+        .verify(issuer_cert, b"")
         .map_err(|err| IssuerDataAuthError::InvalidIssuerAuth(err.to_string()))?;
 
     verify_doc_type(&mso.doc_type, &doc.doc_type)?;
@@ -130,7 +130,7 @@ pub fn verify_issuer_data_auth(
 
     Ok(VerifiedMso {
         mso,
-        issuer_cert: Some(issuer_cert),
+        issuer_cert: Some(issuer_cert.clone()),
     })
 }
 
@@ -410,12 +410,12 @@ mod tests {
             build_sig_structure_for_test(&protected, payload_bytes.raw_cbor_bytes());
         let signature: p256::ecdsa::Signature = signing_key.sign(&sig_structure);
 
-        CoseSign1 {
+        CoseSign1::new(
             protected,
             unprotected,
-            payload: Some(payload_bytes),
-            signature: ByteVec::from(signature.to_bytes().to_vec()),
-        }
+            Some(payload_bytes),
+            ByteVec::from(signature.to_bytes().to_vec()),
+        )
     }
 
     fn issuer_signed_item(
