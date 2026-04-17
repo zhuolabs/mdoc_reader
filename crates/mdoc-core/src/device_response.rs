@@ -1,5 +1,5 @@
 use crate::cbor_string_map_struct::cbor_string_map_struct;
-use crate::{CoseSign1, ElementValue, MobileSecurityObject, TaggedCborBytes};
+use crate::{CoseMac0, CoseSign1, ElementValue, MobileSecurityObject, TaggedCborBytes};
 use anyhow::Result;
 use minicbor::bytes::ByteVec;
 use std::collections::BTreeMap;
@@ -89,7 +89,7 @@ cbor_string_map_struct! {
         }
         optional {
             pub device_signature: CoseSign1 => "deviceSignature",
-            pub device_mac: ElementValue => "deviceMac",
+            pub device_mac: CoseMac0 => "deviceMac",
         }
     }
 }

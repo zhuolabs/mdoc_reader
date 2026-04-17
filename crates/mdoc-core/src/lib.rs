@@ -30,9 +30,10 @@ pub use device_request::{
     ItemRequest, NameSpaces, DEVICE_REQUEST_VERSION_1_0,
 };
 pub use device_response::{
-    DeviceAuth, DeviceResponse, DeviceSigned, IssuerSigned, IssuerSignedItem, MdocDocument,
-    DEVICE_RESPONSE_STATUS_CBOR_DECODING_ERROR, DEVICE_RESPONSE_STATUS_CBOR_VALIDATION_ERROR,
-    DEVICE_RESPONSE_STATUS_GENERAL_ERROR, DEVICE_RESPONSE_STATUS_OK,
+    DeviceAuth, DeviceNameSpaces, DeviceResponse, DeviceSigned, IssuerSigned, IssuerSignedItem,
+    MdocDocument, DEVICE_RESPONSE_STATUS_CBOR_DECODING_ERROR,
+    DEVICE_RESPONSE_STATUS_CBOR_VALIDATION_ERROR, DEVICE_RESPONSE_STATUS_GENERAL_ERROR,
+    DEVICE_RESPONSE_STATUS_OK,
 };
 pub use ident::ble_ident;
 pub use mobile_security_object::{
@@ -42,7 +43,7 @@ pub use mobile_security_object::{
 };
 pub use reader_engagement::{ReaderEngagement, READER_ENGAGEMENT_RECORD_TYPE};
 pub use session_encryption::{
-    derive_emac_key, derive_session_keys, derive_shared_secret, MdocRole, SessionEncryption,
+    derive_session_key, derive_session_keys, derive_shared_secret, MdocRole, SessionEncryption,
 };
 pub use session_messages::{SessionData, SessionEstablishment};
 pub use session_transcript::{NFCHandover, SessionTranscript};

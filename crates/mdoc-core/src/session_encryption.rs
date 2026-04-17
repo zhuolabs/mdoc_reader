@@ -95,15 +95,7 @@ pub fn derive_session_keys(
     Ok((sk_device, sk_reader))
 }
 
-pub fn derive_emac_key(
-    shared_secret: &[u8; 32],
-    session_transcript: &TaggedCborBytes<SessionTranscript>,
-) -> Result<[u8; 32]> {
-    let salt = Sha256::digest(minicbor::to_vec(session_transcript)?);
-    derive_session_key(shared_secret, &salt, b"EMacKey")
-}
-
-fn derive_session_key(shared_secret: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32]> {
+pub fn derive_session_key(shared_secret: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32]> {
     let hkdf = Hkdf::<Sha256>::new(Some(salt), shared_secret);
     let mut output = [0u8; 32];
     hkdf.expand(info, &mut output)

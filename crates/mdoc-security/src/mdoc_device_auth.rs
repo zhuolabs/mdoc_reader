@@ -1,21 +1,15 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use hmac::{Hmac, Mac};
 use mdoc_core::{
-    derive_emac_key, derive_shared_secret, CoseAlg, CoseKeyPrivate, CoseMac0, CoseVerify,
-    ElementValue, MacStructure, MdocDocument, SessionTranscript, TaggedCborBytes, MAC0_CONTEXT,
+    derive_session_key, derive_shared_secret, CoseKeyPrivate, CoseMac0, CoseVerify,
+    DeviceNameSpaces, MdocDocument, SessionTranscript, TaggedCborBytes,
 };
-use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
 use p256::ecdsa::VerifyingKey;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 use crate::VerifiedMso;
-
-type DeviceNameSpaces =
-    std::collections::BTreeMap<String, std::collections::BTreeMap<String, ElementValue>>;
-type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone)]
 pub struct MdocDeviceAuthContext {
@@ -183,63 +177,32 @@ fn verify_device_mac_auth(
 }
 
 fn verify_device_mac(
-    device_mac: &ElementValue,
+    mac0: &CoseMac0,
     emac_key: &[u8; 32],
     expected_payload: &[u8],
 ) -> Result<(), MdocDeviceAuthError> {
-    let mac0: CoseMac0 = device_mac
-        .decode()
-        .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))?;
-    let protected = mac0
-        .protected
-        .decode()
-        .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))?;
-
-    match protected.alg {
-        Some(CoseAlg::HMAC256256) => {}
-        Some(alg) => {
-            return Err(MdocDeviceAuthError::DeviceMacInvalid(format!(
-                "unsupported COSE_Mac0 algorithm: {alg:?}"
-            )))
-        }
-        None => {
-            return Err(MdocDeviceAuthError::DeviceMacInvalid(
-                "COSE_Mac0 algorithm is missing from protected header".to_string(),
-            ))
-        }
-    }
-
     if let Some(payload) = mac0.payload.as_ref() {
         if payload.raw_cbor_bytes() != expected_payload {
             return Err(MdocDeviceAuthError::DeviceAuthPayloadMismatch);
         }
     }
 
-    let mac_structure = build_mac_structure_bytes(&mac0, expected_payload, &[])?;
-    let mut hmac = HmacSha256::new_from_slice(emac_key)
-        .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))?;
-    hmac.update(&mac_structure);
-    if hmac.verify_slice(mac0.tag.as_slice()).is_ok() {
-        return Ok(());
-    }
+    mac0.verify(emac_key, b"").map_err(|err| {
+        MdocDeviceAuthError::DeviceMacInvalid(format!("COSE_Mac0 verification failed: {err}"))
+    })?;
 
-    Err(MdocDeviceAuthError::DeviceMacInvalid(
-        "COSE_Mac0 tag verification failed".to_string(),
-    ))
+    Ok(())
 }
 
-fn build_mac_structure_bytes(
-    mac0: &CoseMac0,
-    payload: &[u8],
-    external_aad: &[u8],
-) -> Result<Vec<u8>, MdocDeviceAuthError> {
-    minicbor::to_vec(MacStructure {
-        context: MAC0_CONTEXT.to_string(),
-        body_protected: ByteVec::from(mac0.protected.raw_cbor_bytes().to_vec()),
-        external_aad: ByteVec::from(external_aad.to_vec()),
-        payload: ByteVec::from(payload.to_vec()),
-    })
-    .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))
+fn derive_emac_key(
+    shared_secret: &[u8; 32],
+    session_transcript: &TaggedCborBytes<SessionTranscript>,
+) -> Result<[u8; 32], MdocDeviceAuthError> {
+    let data = minicbor::to_vec(session_transcript)
+        .map_err(|err| MdocDeviceAuthError::DeviceAuthenticationEncodingFailed(err.to_string()))?;
+    let salt = Sha256::digest(data);
+    derive_session_key(shared_secret, &salt, b"EMacKey")
+        .map_err(|err| MdocDeviceAuthError::DeviceMacInvalid(err.to_string()))
 }
 
 pub(crate) fn build_device_authentication_bytes(
