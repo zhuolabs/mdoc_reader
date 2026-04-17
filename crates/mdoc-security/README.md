@@ -27,33 +27,37 @@ Important sections:
 ## #1 `certificate_validation`
 
 ### Goal
-Validate an mdoc reader authentication certificate chain (`x5chain`) against an IACA root certificate (`iacacert`) provided as DER.
+Validate an mdoc reader authentication certificate chain (`x5chain`) against a caller-provided root certificate.
 
 ### Inputs
-- `iacacert_der: &[u8]`
-- `x5chain: &[Vec<u8>]` (leaf first)
+- `root_certificate: &x509_cert::Certificate`
+- `x5chain: &[x509_cert::Certificate]` (leaf first)
+- `skip_crl: bool`
 - `now: SystemTime`
 
 ### Current implementation status
 
 Implemented in this repository:
 
-- `download_iacacert_der(iacacert_url: Url) -> Result<Vec<u8>, ValidationError>`
-  - HTTPS-only download.
+- `load_x509_certificate_from_file(path) -> Result<x509_cert::Certificate, ValidationError>`
+  - Reads a local certificate file.
+  - PEM / DER both supported.
+- `download_x509_certificate(certificate_url: &Url) -> Result<x509_cert::Certificate, ValidationError>`
+  - HTTPS-only certificate download.
+  - PEM / DER both supported.
   - `reqwest` + `rustls` + native roots.
   - timeout and status checks.
-- `extract_crl_distribution_point(iacacert_der: &[u8]) -> Result<Option<Url>, ValidationError>`
-  - Parses the IACA certificate and extracts the first CRL distribution point URI.
-- `download_crl_der(crl_url: &Url) -> Result<Vec<u8>, ValidationError>`
-  - HTTPS-only CRL download.
-- `validate_reader_auth_certificate(iacacert_der, x5chain, crl_der, now)`
-  - DER parse for IACA + chain certificates.
+- `validate_x5chain(root_certificate, x5chain, skip_crl, now)`
+  - DER encode for root certificate + chain certificates where required by the validation backend.
   - validity period checks (`notBefore` / `notAfter`).
   - chain linkage checks via issuer/subject matching.
   - basic constraints checks (CA/non-CA consistency).
   - leaf keyUsage check (`digitalSignature`) when extension exists.
-  - Uses a caller-provided CRL when available.
-  - CRL parse + leaf serial revocation match check.
+  - When `skip_crl` is `false`, extracts CRL distribution point URIs from the root certificate and downloads CRLs sequentially.
+  - Uses any successfully downloaded CRLs for revocation checking.
+- `validate_document_x5chain(issuer_auth, root_certificate, skip_crl, now)`
+  - Implemented in `issuer_validation`.
+  - Extracts `x5chain` from `issuerAuth` and delegates to `validate_x5chain`.
 
 ### Not implemented yet (deferred)
 
@@ -69,7 +73,7 @@ To keep first implementation manageable, the following are intentionally deferre
 
 Current output types:
 - `CertificateValidationOutcome::Valid { crl_checked: bool }`
-- `ValidationError::{CertificateParse, CrlParse, InvalidChain, Expired, Revoked, CrlUnavailable, Network, Unsupported}`
+- `ValidationError::{Unavailable, Parse, InvalidChain, Expired, Revoked}`
 
 ---
 

@@ -1738,7 +1738,6 @@ name = "mdoc-reader-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
  "chrono",
  "clap",
  "env_logger",
@@ -1752,6 +1751,7 @@ dependencies = [
  "nfc-reader-pcsc",
  "serde_json",
  "tokio",
+ "url",
  "uuid",
  "x509-cert",
 ]
@@ -1762,6 +1762,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "base64",
  "chrono",
  "hex",
  "hkdf",
