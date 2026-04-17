@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Context};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Utc;
 use clap::Parser;
 use log::info;
 use mdoc_core::{
-    CoseKeyPrivate, DeviceRequest, DeviceResponse, NameSpaces, SessionTranscript, TaggedCborBytes,
+    CoseKeyPrivate, DeviceRequest, DeviceResponse, NameSpaces, SessionTranscript,
 };
 use mdoc_data_retrieval_flow::DataRetrievalFlow;
 use mdoc_data_retrieval_flow_nfc_ble::NfcBleDataRetrievalFlow;
@@ -14,8 +13,8 @@ use mdoc_ui_cli::{render_device_response, ConsoleDataRetrievalFlowObserver};
 use nfc_reader_pcsc::PcscReader;
 use serde_json::Value;
 use std::{fs, path::Path, time::SystemTime};
+use url::Url;
 use uuid::Uuid;
-use x509_cert::der::Encode as _;
 
 const DEFAULT_REQUEST_JSON: &str = include_str!("../../../request.example.json");
 const DEFAULT_REQUEST_HELP: &str = concat!(
@@ -35,10 +34,16 @@ struct Cli {
     #[arg(
         long,
         alias = "iaca-cert-der",
-        value_name = "PATH",
-        help = "Path to IACA certificate in PEM or DER used for certificate validation"
+        value_name = "PATH_OR_URL",
+        help = "Path or HTTPS URL to root certificate in PEM or DER used for certificate validation"
     )]
     iaca_cert: Option<String>,
+
+    #[arg(
+        long,
+        help = "Skip CRL download and revocation check during certificate validation"
+    )]
+    skip_crl: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -66,11 +71,10 @@ async fn main() -> anyhow::Result<()> {
 
     let device_request = build_device_request_from_json(&config_json)?;
     info!("DeviceRequest={:?}", device_request);
-    let iaca_cert_der = cli
-        .iaca_cert
-        .as_ref()
-        .map(load_certificate_file)
-        .transpose()?;
+    let iaca_cert = match cli.iaca_cert.as_ref() {
+        Some(source) => Some(load_certificate_from_file_or_url(source).await?),
+        None => None,
+    };
 
     let transport_factory = WinRtBleMdocTransportFactory;
     info!("BLE transport factory selected");
@@ -84,7 +88,8 @@ async fn main() -> anyhow::Result<()> {
         &result.device_response,
         &e_reader_key_private,
         &result.session_transcript,
-        iaca_cert_der.as_deref(),
+        iaca_cert.as_ref(),
+        cli.skip_crl,
     )
     .await;
     print_validation_summary(&validation);
@@ -105,35 +110,28 @@ fn load_json_file(path: impl AsRef<Path>) -> anyhow::Result<Value> {
     parse_json(&raw, &path.display().to_string())
 }
 
-fn load_certificate_file(path: impl AsRef<Path>) -> anyhow::Result<Vec<u8>> {
-    let path = path.as_ref();
-    let bytes = fs::read(path)
-        .with_context(|| format!("failed to read certificate file: {}", path.display()))?;
-
-    if bytes.starts_with(b"-----BEGIN ") {
-        decode_pem_certificate(&bytes)
-            .with_context(|| format!("failed to parse PEM certificate: {}", path.display()))
-    } else {
-        Ok(bytes)
+async fn load_certificate_from_file_or_url(
+    source: &str,
+) -> anyhow::Result<x509_cert::Certificate> {
+    if let Some(url) = parse_remote_certificate_url(source)? {
+        return mdoc_security::download_x509_certificate(&url)
+            .await
+            .map_err(Into::into);
     }
+
+    mdoc_security::load_x509_certificate_from_file(source).map_err(Into::into)
 }
 
-fn decode_pem_certificate(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let pem = std::str::from_utf8(bytes).context("PEM file is not valid UTF-8 text")?;
-    let begin_marker = "-----BEGIN CERTIFICATE-----";
-    let end_marker = "-----END CERTIFICATE-----";
-    let begin = pem
-        .find(begin_marker)
-        .ok_or_else(|| anyhow!("PEM certificate header not found"))?;
-    let rest = &pem[begin + begin_marker.len()..];
-    let end = rest
-        .find(end_marker)
-        .ok_or_else(|| anyhow!("PEM certificate footer not found"))?;
-    let base64_body: String = rest[..end].lines().map(str::trim).collect();
-
-    STANDARD
-        .decode(base64_body)
-        .context("PEM certificate body is not valid base64")
+fn parse_remote_certificate_url(source: &str) -> anyhow::Result<Option<Url>> {
+    match Url::parse(source) {
+        Ok(url) if url.scheme() == "https" => Ok(Some(url)),
+        Ok(url) if source.contains("://") => Err(anyhow!(
+            "unsupported certificate URL scheme: {}",
+            url.scheme()
+        )),
+        Ok(_) | Err(url::ParseError::RelativeUrlWithoutBase) => Ok(None),
+        Err(err) => Err(anyhow!("failed to parse certificate URL: {err}")),
+    }
 }
 
 fn parse_json(raw: &str, source: &str) -> anyhow::Result<Value> {
@@ -185,15 +183,24 @@ async fn validate_device_response(
     response: &DeviceResponse,
     e_self_private_key: &CoseKeyPrivate,
     session_transcript: &SessionTranscript,
-    iaca_cert_der: Option<&[u8]>,
+    iaca_cert: Option<&x509_cert::Certificate>,
+    skip_crl: bool,
 ) -> DeviceResponseValidation {
     let mut documents = Vec::new();
 
     if let Some(response_documents) = response.documents.as_ref() {
         for doc in response_documents {
-            let certificate_validation = match iaca_cert_der {
-                Some(der) => Some(
-                    validate_certificate_chain_with_iaca(&doc.issuer_signed.issuer_auth, der).await,
+            let certificate_validation = match iaca_cert {
+                Some(cert) => Some(
+                    mdoc_security::validate_document_x5chain(
+                        &doc.issuer_signed.issuer_auth,
+                        cert,
+                        skip_crl,
+                        SystemTime::now(),
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(|err| err.to_string()),
                 ),
                 None => None,
             };
@@ -240,47 +247,6 @@ async fn validate_device_response(
 
     DeviceResponseValidation { documents }
 }
-
-async fn validate_certificate_chain_with_iaca(
-    issuer_auth: &mdoc_core::CoseSign1<TaggedCborBytes<mdoc_core::MobileSecurityObject>>,
-    iaca_cert_der: &[u8],
-) -> Result<(), String> {
-    let x5chain = issuer_auth
-        .x5chain()
-        .ok_or_else(|| "issuerAuth x5chain is missing".to_string())?;
-    let chain_der = x5chain
-        .iter()
-        .map(|cert| {
-            cert.to_der()
-                .map_err(|err| format!("failed to encode x5chain certificate to DER: {err}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let crl_der = match mdoc_security::extract_crl_distribution_point(iaca_cert_der) {
-        Ok(Some(crl_url)) => {
-            info!("certificate_validation: CRL distribution point found url={crl_url}");
-            Some(
-                mdoc_security::download_crl_der(&crl_url)
-                    .await
-                    .map_err(|err| err.to_string())?,
-            )
-        }
-        Ok(None) => {
-            info!("certificate_validation: no CRL distribution point found in IACA certificate");
-            None
-        }
-        Err(err) => return Err(err.to_string()),
-    };
-
-    mdoc_security::validate_reader_auth_certificate(
-        iaca_cert_der,
-        &chain_der,
-        crl_der.as_deref(),
-        SystemTime::now(),
-    )
-    .map(|_| ())
-    .map_err(|err| err.to_string())
-}
-
 fn print_validation_summary(validation: &DeviceResponseValidation) {
     if validation.documents.is_empty() {
         println!("[INFO] Validation skipped: no documents");
@@ -322,17 +288,5 @@ fn print_validation_summary(validation: &DeviceResponseValidation) {
                 ),
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::decode_pem_certificate;
-
-    #[test]
-    fn decode_pem_certificate_extracts_der_body() {
-        let pem = b"-----BEGIN CERTIFICATE-----\nAQIDBA==\n-----END CERTIFICATE-----\n";
-        let der = decode_pem_certificate(pem).expect("PEM should decode");
-        assert_eq!(der, vec![0x01, 0x02, 0x03, 0x04]);
     }
 }

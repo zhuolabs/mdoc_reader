@@ -20,4 +20,4 @@ log = "0.4"
 env_logger = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 x509-cert = "0.2"
-base64 = "0.22"
+url = "2"
