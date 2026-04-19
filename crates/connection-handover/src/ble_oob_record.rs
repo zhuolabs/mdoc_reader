@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use ndef_rs::payload::MimePayload;
 use ndef_rs::{NdefRecord, TNF};
 use std::convert::TryFrom;

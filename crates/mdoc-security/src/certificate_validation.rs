@@ -1,14 +1,14 @@
 use std::{fs, path::Path, time::SystemTime};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use log::{info, warn};
 use reqwest::Client;
 use rustls_pki_types::{CertificateDer, UnixTime};
 use url::Url;
 use webpki::{
-    anchor_from_trusted_cert, CertRevocationList, EndEntityCert, Error as WebPkiError,
-    ExpirationPolicy, ExtendedKeyUsageValidator, KeyPurposeIdIter, OwnedCertRevocationList,
-    RevocationCheckDepth, RevocationOptionsBuilder, UnknownStatusPolicy,
+    CertRevocationList, EndEntityCert, Error as WebPkiError, ExpirationPolicy,
+    ExtendedKeyUsageValidator, KeyPurposeIdIter, OwnedCertRevocationList, RevocationCheckDepth,
+    RevocationOptionsBuilder, UnknownStatusPolicy, anchor_from_trusted_cert,
 };
 use x509_cert::der::{Decode as _, Encode as _};
 use x509_parser::extensions::{GeneralName, ParsedExtension};
@@ -36,7 +36,9 @@ pub fn load_x509_certificate_from_file(
     parse_x509_certificate(&certificate_bytes)
 }
 
-fn parse_x509_certificate(certificate_bytes: &[u8]) -> Result<x509_cert::Certificate, ValidationError> {
+fn parse_x509_certificate(
+    certificate_bytes: &[u8],
+) -> Result<x509_cert::Certificate, ValidationError> {
     let certificate_der = decode_pem_or_der(certificate_bytes, RemoteDerKind::Certificate)?;
     x509_cert::Certificate::from_der(certificate_der.as_slice())
         .map_err(|err| ValidationError::Parse(err.to_string()))
@@ -45,7 +47,8 @@ fn parse_x509_certificate(certificate_bytes: &[u8]) -> Result<x509_cert::Certifi
 pub async fn download_x509_certificate(
     certificate_url: &Url,
 ) -> Result<x509_cert::Certificate, ValidationError> {
-    let certificate_bytes = download_remote_bytes(certificate_url, RemoteDerKind::Certificate).await?;
+    let certificate_bytes =
+        download_remote_bytes(certificate_url, RemoteDerKind::Certificate).await?;
     parse_x509_certificate(&certificate_bytes)
 }
 
@@ -104,7 +107,9 @@ pub async fn validate_x5chain(
         match download_crls_for_certificate(root_certificate).await? {
             Some(crls) => Some(crls),
             None => {
-                info!("certificate_validation: no CRL distribution point found in root certificate");
+                info!(
+                    "certificate_validation: no CRL distribution point found in root certificate"
+                );
                 None
             }
         }
@@ -203,8 +208,9 @@ async fn download_crls_for_certificate(
     let certificate_der = certificate
         .to_der()
         .map_err(|err| ValidationError::Parse(err.to_string()))?;
-    let (_, parsed_certificate) = x509_parser::certificate::X509Certificate::from_der(&certificate_der)
-        .map_err(|err| ValidationError::Parse(err.to_string()))?;
+    let (_, parsed_certificate) =
+        x509_parser::certificate::X509Certificate::from_der(&certificate_der)
+            .map_err(|err| ValidationError::Parse(err.to_string()))?;
     let crl_urls = extract_crl_uris(&parsed_certificate);
     if crl_urls.is_empty() {
         return Ok(None);
@@ -217,7 +223,10 @@ async fn download_crls_for_certificate(
         match download_crl(&crl_url).await {
             Ok(crl) => crls.push(crl),
             Err(err) => {
-                warn!("certificate_validation: CRL download skipped url={} error={err}", crl_url);
+                warn!(
+                    "certificate_validation: CRL download skipped url={} error={err}",
+                    crl_url
+                );
                 last_error = Some(err);
             }
         }
@@ -277,7 +286,9 @@ async fn download_remote_bytes(url: &Url, kind: RemoteDerKind) -> Result<Vec<u8>
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .map_err(|err| ValidationError::Unavailable(format!("{} client build failed: {err}", kind.label())))?;
+        .map_err(|err| {
+            ValidationError::Unavailable(format!("{} client build failed: {err}", kind.label()))
+        })?;
 
     let response = client
         .get(url.clone())
@@ -301,17 +312,14 @@ async fn download_remote_bytes(url: &Url, kind: RemoteDerKind) -> Result<Vec<u8>
             ValidationError::Unavailable(format!("{} download failed: {err}", kind.label()))
         })?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|err| {
-            warn!(
-                "certificate_validation: {} response body read failed url={} error={err}",
-                kind.label(),
-                url
-            );
-            ValidationError::Unavailable(format!("{} response body read failed: {err}", kind.label()))
-        })?;
+    let bytes = response.bytes().await.map_err(|err| {
+        warn!(
+            "certificate_validation: {} response body read failed url={} error={err}",
+            kind.label(),
+            url
+        );
+        ValidationError::Unavailable(format!("{} response body read failed: {err}", kind.label()))
+    })?;
 
     info!(
         "certificate_validation: downloaded {} url={} bytes={}",
@@ -330,10 +338,7 @@ fn decode_pem_or_der(bytes: &[u8], kind: RemoteDerKind) -> Result<Vec<u8>, Valid
     };
 
     let (begin_marker, end_marker) = match kind {
-        RemoteDerKind::Certificate => (
-            "-----BEGIN CERTIFICATE-----",
-            "-----END CERTIFICATE-----",
-        ),
+        RemoteDerKind::Certificate => ("-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----"),
         RemoteDerKind::Crl => ("-----BEGIN X509 CRL-----", "-----END X509 CRL-----"),
     };
 
@@ -346,9 +351,12 @@ fn decode_pem_or_der(bytes: &[u8], kind: RemoteDerKind) -> Result<Vec<u8>, Valid
         .ok_or_else(|| ValidationError::Parse(format!("{} PEM footer not found", kind.label())))?;
     let base64_body: String = rest[..end].lines().map(str::trim).collect();
 
-    STANDARD
-        .decode(base64_body)
-        .map_err(|err| ValidationError::Parse(format!("{} PEM body is not valid base64: {err}", kind.label())))
+    STANDARD.decode(base64_body).map_err(|err| {
+        ValidationError::Parse(format!(
+            "{} PEM body is not valid base64: {err}",
+            kind.label()
+        ))
+    })
 }
 
 fn ensure_https_url(url: &Url, kind: RemoteDerKind) -> Result<(), ValidationError> {

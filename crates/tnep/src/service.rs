@@ -1,5 +1,5 @@
 use crate::{
-    receive_ndef_message_selected, write_ndef_message_selected, Result, ServiceParameterRecord,
+    Result, ServiceParameterRecord, receive_ndef_message_selected, write_ndef_message_selected,
 };
 
 use ndef_rs::NdefMessage;

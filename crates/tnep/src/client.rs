@@ -1,7 +1,7 @@
 use crate::{
+    Cc, Error, NDEF_TAG_APP_AID, Result, ServiceParameterRecord, TnepService,
     build_service_select_message, ndef_transact_with_params, parse_service_parameters,
-    parse_status, read_cc, read_ndef_message, select_by_name, Cc, Error, Result,
-    ServiceParameterRecord, TnepService, NDEF_TAG_APP_AID,
+    parse_status, read_cc, read_ndef_message, select_by_name,
 };
 
 use log::debug;

@@ -33,15 +33,23 @@ impl fmt::Display for MdocDeviceAuthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DeviceAuthModeInvalid => {
-                write!(f, "deviceAuth must contain exactly one of deviceSignature or deviceMac")
+                write!(
+                    f,
+                    "deviceAuth must contain exactly one of deviceSignature or deviceMac"
+                )
             }
             Self::DeviceAuthenticationEncodingFailed(message) => {
                 write!(f, "failed to encode DeviceAuthentication: {message}")
             }
             Self::DeviceAuthPayloadMismatch => {
-                write!(f, "device authentication payload does not match DeviceAuthentication bytes")
+                write!(
+                    f,
+                    "device authentication payload does not match DeviceAuthentication bytes"
+                )
             }
-            Self::DeviceSignatureInvalid(message) => write!(f, "invalid deviceSignature: {message}"),
+            Self::DeviceSignatureInvalid(message) => {
+                write!(f, "invalid deviceSignature: {message}")
+            }
             Self::DeviceMacInvalid(message) => write!(f, "invalid deviceMac: {message}"),
             Self::UnauthorizedDeviceNamespace { namespace } => {
                 write!(f, "unauthorized DeviceSigned namespace: {namespace}")

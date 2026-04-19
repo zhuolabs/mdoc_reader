@@ -1,5 +1,5 @@
-use crate::cbor_string_map_struct::cbor_string_map_struct;
 use crate::TaggedCborBytes;
+use crate::cbor_string_map_struct::cbor_string_map_struct;
 use minicbor::bytes::ByteVec;
 use std::collections::BTreeMap;
 

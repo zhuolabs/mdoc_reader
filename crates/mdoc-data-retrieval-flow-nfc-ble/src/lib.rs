@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use connection_handover::{
-    BleAdStructure, BleLeRole, BleOobRecord, HandoverRequest, HandoverSelect,
-    CONNECTION_HANDOVER_SERVICE_NAME,
+    BleAdStructure, BleLeRole, BleOobRecord, CONNECTION_HANDOVER_SERVICE_NAME, HandoverRequest,
+    HandoverSelect,
 };
 use mdoc_core::{
-    ble_ident, CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse,
-    NFCHandover, ReaderEngagement, SessionData, SessionEstablishment, SessionTranscript,
-    TaggedCborBytes,
+    CoseKeyPrivate, CoseKeyPublic, DeviceEngagement, DeviceRequest, DeviceResponse, NFCHandover,
+    ReaderEngagement, SessionData, SessionEstablishment, SessionTranscript, TaggedCborBytes,
+    ble_ident,
 };
 use mdoc_data_retrieval_flow::{
     DataRetrievalFlow, DataRetrievalFlowEvent, DataRetrievalFlowObserver, DataRetrievalResult,

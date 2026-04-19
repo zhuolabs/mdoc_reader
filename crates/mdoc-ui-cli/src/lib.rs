@@ -3,9 +3,7 @@ use chrono::NaiveDate;
 use hayro_jpeg2000::{DecodeSettings, Image as Jpeg2000Image};
 use image::{DynamicImage, ImageFormat};
 use log::info;
-use mdoc_core::{
-    DeviceResponse, ElementValue, FullDate,
-};
+use mdoc_core::{DeviceResponse, ElementValue, FullDate};
 use mdoc_data_retrieval_flow::{DataRetrievalFlowEvent, EngagementMethod, TransportKind};
 use mdoc_ui::{FlowEventUi, MdocResultUi};
 use minicbor::bytes::ByteVec;

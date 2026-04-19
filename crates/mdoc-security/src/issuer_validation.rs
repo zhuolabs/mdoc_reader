@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use mdoc_core::{CoseSign1, MobileSecurityObject, TaggedCborBytes};
 
-use crate::certificate_validation::{validate_x5chain, CertificateValidationOutcome};
+use crate::certificate_validation::{CertificateValidationOutcome, validate_x5chain};
 
 pub async fn validate_document_x5chain(
     issuer_auth: &CoseSign1<TaggedCborBytes<MobileSecurityObject>>,

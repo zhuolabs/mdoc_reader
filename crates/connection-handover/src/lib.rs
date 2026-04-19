@@ -4,6 +4,6 @@ mod connection_handover;
 mod connection_handover_types;
 
 pub use ble_oob_record::{
-    BleAdStructure, BleAddressType, BleLeDeviceAddress, BleLeRole, BleOobRecord, BLE_OOB_MIME_TYPE,
+    BLE_OOB_MIME_TYPE, BleAdStructure, BleAddressType, BleLeDeviceAddress, BleLeRole, BleOobRecord,
 };
-pub use connection_handover::{HandoverRequest, HandoverSelect, CONNECTION_HANDOVER_SERVICE_NAME};
+pub use connection_handover::{CONNECTION_HANDOVER_SERVICE_NAME, HandoverRequest, HandoverSelect};

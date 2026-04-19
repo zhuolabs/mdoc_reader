@@ -59,20 +59,12 @@ struct Cc {
 impl Cc {
     fn read_chunk_size(&self) -> usize {
         let mle = usize::from(self.m_le);
-        if mle == 0 {
-            SHORT_APDU_MAX_LC
-        } else {
-            mle
-        }
+        if mle == 0 { SHORT_APDU_MAX_LC } else { mle }
     }
 
     fn write_chunk_size(&self) -> usize {
         let mlc = usize::from(self.m_lc);
-        if mlc == 0 {
-            SHORT_APDU_MAX_LC
-        } else {
-            mlc
-        }
+        if mlc == 0 { SHORT_APDU_MAX_LC } else { mlc }
     }
 }
 

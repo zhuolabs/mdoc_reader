@@ -1,8 +1,8 @@
 use minicbor::bytes::ByteVec;
 use minicbor::{Decode, Encode};
+use p256::EncodedPoint;
 use p256::ecdsa::VerifyingKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
-use p256::EncodedPoint;
 use p256::{PublicKey, SecretKey};
 use rand_core::OsRng;
 

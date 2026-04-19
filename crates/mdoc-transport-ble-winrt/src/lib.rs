@@ -1,11 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use log::debug;
 use mdoc_transport::{BleTransportParams, MdocTransport, MdocTransportConnector};
 use std::collections::VecDeque;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use windows::core::{IInspectable, Ref, GUID};
 use windows::Devices::Bluetooth::BluetoothError;
 use windows::Devices::Bluetooth::GenericAttributeProfile::{
     GattCharacteristicProperties, GattLocalCharacteristic, GattLocalCharacteristicParameters,
@@ -14,6 +13,7 @@ use windows::Devices::Bluetooth::GenericAttributeProfile::{
 };
 use windows::Foundation::TypedEventHandler;
 use windows::Storage::Streams::{DataReader, DataWriter, IBuffer};
+use windows::core::{GUID, IInspectable, Ref};
 
 const STATE_UUID: &str = "00000005-a123-48ce-896b-4c76973373e6";
 const C2S_UUID: &str = "00000006-a123-48ce-896b-4c76973373e6";
