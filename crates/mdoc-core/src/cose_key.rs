@@ -107,14 +107,6 @@ impl TryFrom<&CoseKeyPublic> for VerifyingKey {
     }
 }
 
-impl TryFrom<CoseKeyPublic> for PublicKey {
-    type Error = anyhow::Error;
-
-    fn try_from(key: CoseKeyPublic) -> Result<Self, Self::Error> {
-        Self::try_from(&key)
-    }
-}
-
 impl TryFrom<&SecretKey> for CoseKeyPrivate {
     type Error = anyhow::Error;
 
