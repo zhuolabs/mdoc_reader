@@ -207,36 +207,11 @@ fn decode_hex_ascii(bytes: &[u8]) -> Option<Vec<u8>> {
     if text.len() < 2 || text.len() % 2 != 0 {
         return None;
     }
-    if !text.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-
-    let mut decoded = Vec::with_capacity(text.len() / 2);
-    let mut chars = text.as_bytes().chunks_exact(2);
-    for pair in &mut chars {
-        let high = decode_hex_nibble(pair[0])?;
-        let low = decode_hex_nibble(pair[1])?;
-        decoded.push((high << 4) | low);
-    }
-    Some(decoded)
-}
-
-fn decode_hex_nibble(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
+    hex::decode(text).ok()
 }
 
 fn hex_string(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(&mut out, "{byte:02x}");
-    }
-    out
+    hex::encode(bytes)
 }
 
 fn select_trust_point(
