@@ -63,123 +63,103 @@ where
         e_reader_key_private: &CoseKeyPrivate,
         observer: Option<&dyn DataRetrievalFlowObserver>,
     ) -> Result<DataRetrievalResult> {
-        read_mdoc(
-            self.reader,
-            self.transport_factory,
-            device_request,
+        let service_uuid = self.service_uuid.unwrap_or_else(Uuid::new_v4);
+
+        notify_event(
+            observer,
+            DataRetrievalFlowEvent::WaitingForEngagement(EngagementMethod::Nfc),
+        );
+
+        let mut nfc = self
+            .reader
+            .connect(std::time::Duration::from_secs(120))
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("NFC card was not detected within timeout"))?;
+
+        notify_event(
+            observer,
+            DataRetrievalFlowEvent::EngagementConnected(EngagementMethod::Nfc),
+        );
+
+        let mut tnep = TnepClient::new(&mut nfc)
+            .await
+            .context("failed to initialize TNEP client")?;
+        let mut handover_service = tnep
+            .select(CONNECTION_HANDOVER_SERVICE_NAME)
+            .await
+            .context("failed to select TNEP handover service")?;
+
+        let reader_engagement_record = &ReaderEngagement::default();
+        let ble_oob_record = &BleOobRecord {
+            ad_structures: vec![
+                BleAdStructure::LeRole(BleLeRole::OnlyPeripheral),
+                BleAdStructure::CompleteUuid128List(vec![service_uuid]),
+            ],
+        };
+        let handover_request =
+            HandoverRequest::new(ble_oob_record, vec![reader_engagement_record])?;
+
+        let handover_request_message = (&handover_request).into();
+        let handover_select_message = handover_service
+            .exchange(&handover_request_message)
+            .await
+            .context("TNEP handover exchange failed")?;
+
+        let handover_select: HandoverSelect = (&handover_select_message)
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Handover Select message parse failed"))?;
+
+        let (_, device_engagement) = handover_select
+            .find_carrier_auxiliary(
+                |record| BleOobRecord::try_from(record).ok(),
+                |record| DeviceEngagement::try_from(record).ok(),
+            )
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BleOob carrier with DeviceEngagement auxiliary record not found in Handover Select"
+                )
+            })?;
+
+        let e_device_key_bytes = device_engagement.e_device_key_bytes();
+        let ident = ble_ident(e_device_key_bytes)?;
+        let e_reader_key = e_reader_key_private.to_public();
+        let session_transcript = SessionTranscript(
+            Some(TaggedCborBytes::from(&device_engagement)),
+            TaggedCborBytes::from(&e_reader_key),
+            NFCHandover(
+                (&handover_select_message).try_into()?,
+                Some((&handover_request_message).try_into()?),
+            ),
+        );
+
+        let mut transport = self
+            .transport_factory
+            .connect(BleTransportParams {
+                service_uuid,
+                ident,
+            })
+            .await?;
+
+        notify_event(
+            observer,
+            DataRetrievalFlowEvent::TransportConnected(TransportKind::Ble),
+        );
+
+        let device_response = do_reader_flow_with_transport(
+            &mut transport,
+            &e_device_key_bytes.decode()?,
+            &session_transcript,
             e_reader_key_private,
-            self.service_uuid,
+            device_request,
             observer,
         )
-        .await
-    }
-}
-
-pub async fn read_mdoc<T, F>(
-    reader: &mut T,
-    transport_factory: &F,
-    device_request: &DeviceRequest,
-    e_reader_key_private: &CoseKeyPrivate,
-    service_uuid: Option<Uuid>,
-    observer: Option<&dyn DataRetrievalFlowObserver>,
-) -> Result<DataRetrievalResult>
-where
-    T: NfcReader + ?Sized,
-    F: MdocTransportConnector<Params = BleTransportParams> + ?Sized,
-{
-    let service_uuid = service_uuid.unwrap_or_else(Uuid::new_v4);
-
-    notify_event(
-        observer,
-        DataRetrievalFlowEvent::WaitingForEngagement(EngagementMethod::Nfc),
-    );
-
-    let mut nfc = reader
-        .connect(std::time::Duration::from_secs(120))
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("NFC card was not detected within timeout"))?;
-
-    notify_event(
-        observer,
-        DataRetrievalFlowEvent::EngagementConnected(EngagementMethod::Nfc),
-    );
-
-    let mut tnep = TnepClient::new(&mut nfc)
-        .await
-        .context("failed to initialize TNEP client")?;
-    let mut handover_service = tnep
-        .select(CONNECTION_HANDOVER_SERVICE_NAME)
-        .await
-        .context("failed to select TNEP handover service")?;
-
-    let reader_engagement_record = &ReaderEngagement::default();
-    let ble_oob_record = &BleOobRecord {
-        ad_structures: vec![
-            BleAdStructure::LeRole(BleLeRole::OnlyPeripheral),
-            BleAdStructure::CompleteUuid128List(vec![service_uuid]),
-        ],
-    };
-    let handover_request = HandoverRequest::new(ble_oob_record, vec![reader_engagement_record])?;
-
-    let handover_request_message = (&handover_request).into();
-    let handover_select_message = handover_service
-        .exchange(&handover_request_message)
-        .await
-        .context("TNEP handover exchange failed")?;
-
-    let handover_select: HandoverSelect = (&handover_select_message)
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("Handover Select message parse failed"))?;
-
-    let (_, device_engagement) = handover_select
-        .find_carrier_auxiliary(
-            |record| BleOobRecord::try_from(record).ok(),
-            |record| DeviceEngagement::try_from(record).ok(),
-        )
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "BleOob carrier with DeviceEngagement auxiliary record not found in Handover Select"
-            )
-        })?;
-
-    let e_device_key_bytes = device_engagement.e_device_key_bytes();
-    let ident = ble_ident(e_device_key_bytes)?;
-    let e_reader_key = e_reader_key_private.to_public();
-    let session_transcript = SessionTranscript(
-        Some(TaggedCborBytes::from(&device_engagement)),
-        TaggedCborBytes::from(&e_reader_key),
-        NFCHandover(
-            (&handover_select_message).try_into()?,
-            Some((&handover_request_message).try_into()?),
-        ),
-    );
-
-    let mut transport = transport_factory
-        .connect(BleTransportParams {
-            service_uuid,
-            ident,
-        })
         .await?;
 
-    notify_event(
-        observer,
-        DataRetrievalFlowEvent::TransportConnected(TransportKind::Ble),
-    );
-
-    let device_response = do_reader_flow_with_transport(
-        &mut transport,
-        &e_device_key_bytes.decode()?,
-        &session_transcript,
-        e_reader_key_private,
-        device_request,
-        observer,
-    )
-    .await?;
-
-    Ok(DataRetrievalResult {
-        device_response,
-        session_transcript,
-    })
+        Ok(DataRetrievalResult {
+            device_response,
+            session_transcript,
+        })
+    }
 }
 
 async fn do_reader_flow_with_transport<T>(
