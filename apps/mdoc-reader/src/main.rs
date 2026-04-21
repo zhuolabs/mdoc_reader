@@ -2,9 +2,11 @@ use anyhow::{Context, anyhow};
 use clap::Parser;
 use log::info;
 use mdoc_core::{CoseKeyPrivate, DeviceRequest, NameSpaces};
+use mdoc_data_retrieval_flow::{DataRetrievalFlowEvent, DataRetrievalFlowObserver};
 use mdoc_reader_flow::read_mdoc;
 use mdoc_transport_ble_winrt::WinRtBleMdocTransportFactory;
-use mdoc_ui_cli::{ConsoleDataRetrievalFlowObserver, render_device_response};
+use mdoc_ui::{FlowEventUi, MdocResultUi};
+use mdoc_ui_cli::ConsoleMdocUi;
 use nfc_reader_pcsc::PcscReader;
 use serde_json::Value;
 use std::{
@@ -43,7 +45,8 @@ async fn main() -> anyhow::Result<()> {
     let request_config = load_request_config(&cli)?;
 
     let mut nfc = PcscReader::new();
-    let observer = ConsoleDataRetrievalFlowObserver;
+    let observer_ui = ConsoleMdocUi;
+    let observer = UiFlowObserver { ui: &observer_ui };
 
     let device_request = build_device_request_from_json(&request_config.json)?;
     info!("DeviceRequest={:?}", device_request);
@@ -63,7 +66,23 @@ async fn main() -> anyhow::Result<()> {
         cli.skip_crl,
     )
     .await?;
-    render_device_response(&response)
+    let mut result_ui = ConsoleMdocUi;
+    result_ui.render_result(&response, &()).map_err(Into::into)
+}
+
+struct UiFlowObserver<'a, U> {
+    ui: &'a U,
+}
+
+impl<U> DataRetrievalFlowObserver for UiFlowObserver<'_, U>
+where
+    U: FlowEventUi,
+{
+    fn on_event(&self, event: DataRetrievalFlowEvent) {
+        if self.ui.on_flow_event(event).is_err() {
+            info!("failed to render flow event");
+        }
+    }
 }
 
 struct RequestConfig {

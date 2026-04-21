@@ -11,16 +11,6 @@ use minicbor::bytes::ByteVec;
 const PORTRAIT_WIDTH_CELLS: u32 = 30;
 
 #[derive(Default)]
-pub struct ConsoleDataRetrievalFlowObserver;
-
-impl mdoc_data_retrieval_flow::DataRetrievalFlowObserver for ConsoleDataRetrievalFlowObserver {
-    fn on_event(&self, event: DataRetrievalFlowEvent) {
-        let ui = ConsoleMdocUi;
-        ui.on_flow_event(event).unwrap();
-    }
-}
-
-#[derive(Default)]
 pub struct ConsoleMdocUi;
 
 impl MdocResultUi<()> for ConsoleMdocUi {
@@ -41,7 +31,7 @@ impl FlowEventUi for ConsoleMdocUi {
     }
 }
 
-pub fn print_flow_event(event: DataRetrievalFlowEvent) {
+fn print_flow_event(event: DataRetrievalFlowEvent) {
     match event {
         DataRetrievalFlowEvent::WaitingForEngagement(method) => {
             println!(
@@ -84,12 +74,7 @@ fn format_transport_kind(kind: TransportKind) -> &'static str {
     }
 }
 
-pub fn render_device_response(response: &DeviceResponse) -> Result<()> {
-    let mut ui = ConsoleMdocUi;
-    ui.render_result(response, &())
-}
-
-pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
+fn render_portrait(portrait: &ElementValue) -> Result<()> {
     let bytes = portrait
         .decode::<ByteVec>()
         .context("portrait element value is not bytes")?;
@@ -97,7 +82,7 @@ pub fn render_portrait(portrait: &ElementValue) -> Result<()> {
     print_portrait(&image)
 }
 
-pub fn decode_portrait(bytes: &[u8]) -> Result<DynamicImage> {
+fn decode_portrait(bytes: &[u8]) -> Result<DynamicImage> {
     match decode_jpeg2000(bytes) {
         Ok(image) => Ok(image),
         Err(jpeg2000_err) => {
@@ -111,19 +96,19 @@ pub fn decode_portrait(bytes: &[u8]) -> Result<DynamicImage> {
     }
 }
 
-pub fn decode_jpeg2000(bytes: &[u8]) -> Result<DynamicImage> {
+fn decode_jpeg2000(bytes: &[u8]) -> Result<DynamicImage> {
     let decoder = Jpeg2000Image::new(bytes, &DecodeSettings::default())
         .context("failed to parse portrait as JPEG2000")?;
 
     DynamicImage::from_decoder(decoder).context("failed to decode JPEG2000 portrait")
 }
 
-pub fn decode_jpeg(bytes: &[u8]) -> Result<DynamicImage> {
+fn decode_jpeg(bytes: &[u8]) -> Result<DynamicImage> {
     image::load_from_memory_with_format(bytes, ImageFormat::Jpeg)
         .context("failed to decode JPEG portrait")
 }
 
-pub fn print_portrait(image: &DynamicImage) -> Result<()> {
+fn print_portrait(image: &DynamicImage) -> Result<()> {
     let config = viuer::Config {
         transparent: true,
         width: Some(PORTRAIT_WIDTH_CELLS),
