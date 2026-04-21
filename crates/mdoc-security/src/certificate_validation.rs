@@ -100,38 +100,22 @@ pub async fn validate_x5chain(
             .map_err(|_| ValidationError::Expired)?,
     );
 
-    let downloaded_crls = if skip_crl {
-        info!("certificate_validation: CRL check skipped");
-        None
-    } else {
-        match download_crls_for_certificate(root_certificate).await? {
-            Some(crls) => Some(crls),
-            None => {
-                info!(
-                    "certificate_validation: no CRL distribution point found in root certificate"
-                );
-                None
-            }
-        }
-    };
-    let crls = downloaded_crls
-        .as_ref()
-        .map(|crls| crls.iter().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let crl_checked = !skip_crl && !crls.is_empty();
-
-    let revocation = if crls.is_empty() {
+    let downloaded_crls =
+        download_crls_for_chain_if_enabled(root_certificate, x5chain, skip_crl).await?;
+    let crl_refs = downloaded_crls.iter().collect::<Vec<_>>();
+    let revocation = if crl_refs.is_empty() {
         None
     } else {
         Some(
-            RevocationOptionsBuilder::new(&crls)
+            RevocationOptionsBuilder::new(&crl_refs)
                 .map_err(|_| ValidationError::Parse("no CRLs provided".to_string()))?
-                .with_depth(RevocationCheckDepth::EndEntity)
+                .with_depth(RevocationCheckDepth::Chain)
                 .with_status_policy(UnknownStatusPolicy::Deny)
                 .with_expiration_policy(ExpirationPolicy::Ignore)
                 .build(),
         )
     };
+    let crl_checked = !skip_crl && !crl_refs.is_empty();
 
     end_entity
         .verify_for_usage(
@@ -147,6 +131,19 @@ pub async fn validate_x5chain(
 
     info!("certificate_validation: completed crl_checked={crl_checked}");
     Ok(CertificateValidationOutcome::Valid { crl_checked })
+}
+
+async fn download_crls_for_chain_if_enabled(
+    root_certificate: &x509_cert::Certificate,
+    x5chain: &[x509_cert::Certificate],
+    skip_crl: bool,
+) -> Result<Vec<CertRevocationList<'static>>, ValidationError> {
+    if skip_crl {
+        info!("certificate_validation: CRL check skipped");
+        return Ok(Vec::new());
+    }
+
+    download_crls_for_certificate_chain(root_certificate, x5chain).await
 }
 
 fn validate_key_usage(
@@ -239,6 +236,34 @@ async fn download_crls_for_certificate(
     }
 
     Ok(Some(crls))
+}
+
+async fn download_crls_for_certificate_chain(
+    root_certificate: &x509_cert::Certificate,
+    x5chain: &[x509_cert::Certificate],
+) -> Result<Vec<CertRevocationList<'static>>, ValidationError> {
+    let mut all_crls = Vec::new();
+    let mut saw_distribution_point = false;
+
+    for certificate in std::iter::once(root_certificate).chain(x5chain.iter()) {
+        match download_crls_for_certificate(certificate).await? {
+            Some(mut crls) => {
+                saw_distribution_point = true;
+                all_crls.append(&mut crls);
+            }
+            None => {
+                // This certificate does not advertise CRL distribution points.
+            }
+        }
+    }
+
+    if !saw_distribution_point {
+        info!(
+            "certificate_validation: no CRL distribution point found in root or chain certificates"
+        );
+    }
+
+    Ok(all_crls)
 }
 
 #[derive(Debug, Clone, Copy)]
