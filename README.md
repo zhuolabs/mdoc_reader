@@ -16,6 +16,10 @@ zhuo@zhuolabs.com
 - A PC with Bluetooth Low Energy (BLE) support
 - A PC/SC-compatible contactless card reader
 
+Prebuilt `mdoc-reader.exe` binaries are available from the GitHub Releases page:
+
+- https://github.com/zhuolabs/mdoc_reader/releases
+
 ## Usage
 
 ### Device Request
