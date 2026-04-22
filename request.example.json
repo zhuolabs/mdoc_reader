@@ -1,4 +1,5 @@
 {
+  "iacaCert": "https://trust.dmv.ca.gov/certificates/ca-dmv-iaca-root-ca-crt.cer",
   "docRequests": [
     {
       "itemsRequest": {
@@ -6,24 +7,13 @@
         "nameSpaces": {
           "org.iso.18013.5.1": {
             "age_over_18": false,
-            "sex": false,
             "given_name": false,
-            "issue_date": false,
-            "expiry_date": false,
             "family_name": false,
-            "document_number": false,
-            "issuing_authority": false,
             "portrait": false,
-            "resident_address": true,
-            "resident_city": true,
-            "resident_state": true,
-            "resident_postal_code": true,
-            "resident_country": true
+            "resident_address": false
           },
           "org.iso.18013.5.1.aamva": {
-            "resident_county": true,
-            "DHS_compliance": false,
-            "EDL_credential": false
+            "resident_county": false
           }
         }
       }
