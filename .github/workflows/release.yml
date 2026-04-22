@@ -1,0 +1,41 @@
+name: Release mdoc-reader
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build mdoc-reader
+        run: cargo build --release --package mdoc-reader
+
+      - name: Upload mdoc-reader artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mdoc-reader-windows
+          path: target/release/mdoc-reader.exe
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: target/release/mdoc-reader.exe

@@ -1,7 +1,8 @@
 # mdoc-reader
 
-`mdoc-reader` is an experimental mdoc reader implementation for Windows.
-It was built with reference to the ISO/IEC 18013-5 second-edition working draft:
+`mdoc-reader` is an experimental tool for reading and verifying mobile documents (mdoc), such as mobile driver's licenses (mDL), on Windows. It uses NFC and Bluetooth Low Energy (BLE) for device engagement and data retrieval, requests selected identity attributes, and verifies the received data based on ISO/IEC 18013-5.
+
+This implementation was built with reference to the ISO/IEC 18013-5 second-edition working draft:
 
 - ISO working draft: https://github.com/ISOWG10/ISO-18013/blob/main/Working%20Documents/Working%20Draft%20ISO_IEC_18013-5_second-edition_CD_ballot_resolution_v4.pdf
 
@@ -80,11 +81,11 @@ The boolean value is `intentToRetain`: `false` means no intent to retain, and `t
 Run examples (PowerShell):
 
 ```powershell
-.\mdoc-reader --request request.json
+.\mdoc-reader --request .\request.example.json
 ```
 
 ```powershell
-$env:RUST_LOG="debug"; .\mdoc-reader --request request.json
+$env:RUST_LOG="debug"; .\mdoc-reader --request .\request.example.json
 ```
 
 ## Implemented Features
@@ -146,8 +147,8 @@ On PCs where `ServicesAllowedList` is configured, that default UUID can cause a 
 
 To work around this, use the `--service-uuid` option and specify an allowed UUID:
 
-```bash
-.\mdoc-reader --request request.json --service-uuid 00001200-0000-1000-8000-00805F9B34FB
+```powershell
+.\mdoc-reader --request .\request.example.json --service-uuid 00001200-0000-1000-8000-00805F9B34FB
 ```
 
 You can check the allowed UUIDs in the following registry key:
