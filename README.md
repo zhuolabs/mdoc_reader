@@ -97,6 +97,11 @@ Run examples (PowerShell):
 $env:RUST_LOG="debug"; .\mdoc-reader --request .\request.example.json
 ```
 
+Optional verification flags:
+
+- `--skip-crl-check`: skips CRL download and CRL-based certificate revocation checks.
+- `--ignore-mso-revocation-check`: skips MSO revocation checks.
+
 ## Implemented Features
 
 The current implementation includes the following items aligned with the ISO/IEC 18013-5 second-edition working draft:

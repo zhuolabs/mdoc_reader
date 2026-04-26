@@ -14,6 +14,7 @@ pub async fn read_mdoc<T, F>(
     e_reader_key_private: &CoseKeyPrivate,
     device_request: &DeviceRequest,
     ignore_crl: bool,
+    ignore_mso_revocation_check: bool,
     observer: Option<&dyn DataRetrievalFlowObserver>,
     iaca_cert: Option<&x509_cert::Certificate>,
     service_uuid: Option<Uuid>,
@@ -33,6 +34,7 @@ where
         &result.session_transcript,
         iaca_cert,
         ignore_crl,
+        ignore_mso_revocation_check,
     )
     .await?;
 

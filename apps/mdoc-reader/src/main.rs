@@ -34,7 +34,10 @@ struct Cli {
         long,
         help = "Skip CRL download and revocation check during certificate validation"
     )]
-    ignore_crl: bool,
+    skip_crl_check: bool,
+
+    #[arg(long, help = "Skip MSO revocation check")]
+    ignore_mso_revocation_check: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -60,7 +63,8 @@ async fn main() -> anyhow::Result<()> {
         &transport_factory,
         &e_reader_key_private,
         &device_request,
-        cli.ignore_crl,
+        cli.skip_crl_check,
+        cli.ignore_mso_revocation_check,
         Some(&observer),
         iaca_cert.as_ref(),
         cli.service_uuid,

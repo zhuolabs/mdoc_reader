@@ -10,6 +10,7 @@ pub(crate) async fn validate_device_response(
     session_transcript: &SessionTranscript,
     iaca_cert: Option<&x509_cert::Certificate>,
     ignore_crl: bool,
+    ignore_mso_revocation_check: bool,
 ) -> anyhow::Result<()> {
     if let Some(response_documents) = response.documents.as_ref() {
         for doc in response_documents {
@@ -44,29 +45,36 @@ pub(crate) async fn validate_device_response(
                 )
             })?;
 
-            let revocation = mdoc_security::check_mso_revocation(
-                &verified,
-                iaca_cert,
-                ignore_crl,
-                chrono::Utc::now(),
-            )
-            .await
-            .with_context(|| format!("mso_revocation failed docType={}", doc.doc_type))?;
-            match revocation.state {
-                MsoRevocationState::NotChecked => {
-                    info!(
-                        "[OK] MSO revocation not checked for docType={}",
-                        doc.doc_type
-                    );
-                }
-                MsoRevocationState::NotRevoked => {
-                    info!(
-                        "[OK] MSO revocation check passed for docType={}: {:?}",
-                        doc.doc_type, revocation
-                    );
-                }
-                MsoRevocationState::Revoked => {
-                    return Err(anyhow!("MSO revoked docType={}", doc.doc_type));
+            if ignore_mso_revocation_check {
+                info!(
+                    "[OK] MSO revocation check skipped by option for docType={}",
+                    doc.doc_type
+                );
+            } else {
+                let revocation = mdoc_security::check_mso_revocation(
+                    &verified,
+                    iaca_cert,
+                    ignore_crl,
+                    chrono::Utc::now(),
+                )
+                .await
+                .with_context(|| format!("mso_revocation failed docType={}", doc.doc_type))?;
+                match revocation.state {
+                    MsoRevocationState::NotChecked => {
+                        info!(
+                            "[OK] MSO revocation not checked for docType={}",
+                            doc.doc_type
+                        );
+                    }
+                    MsoRevocationState::NotRevoked => {
+                        info!(
+                            "[OK] MSO revocation check passed for docType={}: {:?}",
+                            doc.doc_type, revocation
+                        );
+                    }
+                    MsoRevocationState::Revoked => {
+                        return Err(anyhow!("MSO revoked docType={}", doc.doc_type));
+                    }
                 }
             }
 
@@ -160,6 +168,7 @@ mod tests {
             &dummy_session_transcript(),
             None,
             false,
+            false,
         )
         .await
         .unwrap();
@@ -178,6 +187,7 @@ mod tests {
             &dummy_session_transcript(),
             None,
             false,
+            false,
         )
         .await
         .unwrap();
@@ -191,6 +201,7 @@ mod tests {
             &CoseKeyPrivate::new().unwrap(),
             &dummy_session_transcript(),
             None,
+            false,
             false,
         )
         .await
